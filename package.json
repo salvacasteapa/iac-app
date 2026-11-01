@@ -1,0 +1,16 @@
+{
+  "name": "iac-app",
+  "version": "1.0.0",
+  "description": "IAC · Agentes de compra y venta para empresas",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "test": "node --no-warnings test/e2e.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
