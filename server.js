@@ -401,7 +401,7 @@ app.post('/api/billing/checkout', auth, admin, async (req, res) => {
   }
   const form = new URLSearchParams({
     mode: 'subscription', 'line_items[0][price]': plan.stripe, 'line_items[0][quantity]': '1',
-    success_url: `${BASE_URL}/#membresia?ok=1`, cancel_url: `${BASE_URL}/#membresia`,
+    success_url: `${BASE_URL}/app#membresia?ok=1`, cancel_url: `${BASE_URL}/app#membresia`,
     client_reference_id: String(req.company.id), customer_email: req.user.email, 'metadata[plan]': planKey, locale: 'es'
   });
   const r = await fetch('https://api.stripe.com/v1/checkout/sessions', { method: 'POST', headers: { Authorization: `Bearer ${STRIPE_KEY}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form });
@@ -429,7 +429,7 @@ app.post('/api/admin/companies/:id', auth, superOnly, (req, res) => {
 // ---------- pedido imprimible con membrete ----------
 app.get('/pedido/:id', (req, res, next) => {
   const t = cookies(req).iac_s; const s = t && one('SELECT * FROM sessions WHERE token=? AND expires>?', t, now());
-  if (!s) return res.redirect('/#login');
+  if (!s) return res.redirect('/app#login');
   const u = one('SELECT * FROM users WHERE id=?', s.user_id);
   const d = one('SELECT * FROM deals WHERE id=?', +req.params.id);
   if (!d || (d.buyer_id !== u.company_id && d.seller_id !== u.company_id) || d.status !== 'cerrado') return res.status(404).send('Pedido no encontrado');
@@ -457,7 +457,11 @@ app.get('/pedido/:id', (req, res, next) => {
 });
 
 app.get('/healthz', (req, res) => res.send('ok'));
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+app.get('/api/plans', (req, res) => res.json(Object.fromEntries(Object.entries(PLANS).map(([k, p]) => [k, { name: p.name, price: p.price }]))));
+// Página de inicio pública en "/" y aplicación en "/app"
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'landing.html')));
+app.get(['/app', '/app/'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 if (require.main === module) app.listen(PORT, () => console.log(`IAC en ${BASE_URL}`));
 module.exports = app;

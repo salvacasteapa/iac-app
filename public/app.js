@@ -32,7 +32,7 @@ async function viewAuth(mode) {
   let inv = null; if (invite) inv = await api('/invite/' + encodeURIComponent(invite)).catch(() => null);
   if (inv) document.documentElement.style.setProperty('--brand', inv.color || '#1f4fd1');
   $('#app').innerHTML = `<div class="auth"><div class="card">
-    ${inv ? `<div style="text-align:center;margin-bottom:10px">${inv.logo ? `<img src="${h(inv.logo)}" style="max-height:56px">` : `<div class="logo">${h(inv.name)}</div>`}<p class="muted">${h(inv.name)} te invita a conectar tu departamento de compras</p></div>` : `<div class="logo">IAC</div><p class="muted">Compras y ventas recurrentes que se negocian solas, bajo tus reglas.</p>`}
+    ${inv ? `<div style="text-align:center;margin-bottom:10px">${inv.logo ? `<img src="${h(inv.logo)}" style="max-height:56px">` : `<div class="logo">${h(inv.name)}</div>`}<p class="muted">${h(inv.name)} te invita a conectar tu departamento de compras</p></div>` : `<a href="/" style="text-decoration:none"><div class="logo">IAC</div></a><p class="muted">Compras y ventas recurrentes que se negocian solas, bajo tus reglas.</p>`}
     <div class="seg" style="margin:10px 0"><button data-m="login" class="${mode === 'login' ? 'on' : ''}">Entrar</button><button data-m="registro" class="${mode === 'registro' ? 'on' : ''}">Crear cuenta de empresa</button></div>
     <form id="f">
       ${mode === 'registro' ? `<label>Nombre de la empresa</label><input name="company" required>
@@ -73,7 +73,7 @@ async function shell(active, content) {
     <div class="sp"></div>
     <div class="me">${h(ME.user.name || ME.user.email)}<br><a href="#" id="logout">Cerrar sesión</a></div>
   </aside><main id="main">${!c.active && !ME.user.is_super && active !== 'membresia' ? `<div class="banner bad">Tu membresía no está activa. <a href="#membresia">Actívala aquí</a> para que tus agentes sigan trabajando.</div>` : ''}${content}</main></div>`;
-  $('#logout').onclick = async e => { e.preventDefault(); await api('/logout', { body: {} }); ME = null; location.hash = '#login'; };
+  $('#logout').onclick = async e => { e.preventDefault(); await api('/logout', { body: {} }); ME = null; location.href = '/'; };
   return stats;
 }
 
@@ -207,7 +207,7 @@ async function viewConexiones() {
   await shell('conexiones', '<div id="c"></div>');
   const conns = await api('/connections');
   const asSeller = conns.filter(c => c.as === 'vendedor'), asBuyer = conns.filter(c => c.as === 'comprador');
-  const link = `${location.origin}/?invita=${encodeURIComponent(ME.company.code)}#registro`;
+  const link = `${location.origin}/app?invita=${encodeURIComponent(ME.company.code)}#registro`;
   const SH = { consumo: 'consumo', prevision: 'previsión', stock: 'stock' };
   $('#c').innerHTML = `<h1>Conexiones</h1><p class="lead">Una conexión es el permiso de un cliente para que el agente de ventas de su proveedor negocie con su agente de compras.</p>
   ${isSeller() ? `<div class="grid"><div class="card"><h2>Invitar a un cliente</h2><p class="hint">Envía este enlace a tu cliente. Al crear su cuenta, recibirá tu solicitud de conexión.</p>
