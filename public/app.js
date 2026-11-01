@@ -31,18 +31,24 @@ async function viewAuth(mode) {
   const invite = qs.get('invita') || route().q.get('invita');
   let inv = null; if (invite) inv = await api('/invite/' + encodeURIComponent(invite)).catch(() => null);
   if (inv) document.documentElement.style.setProperty('--brand', inv.color || '#1f4fd1');
-  $('#app').innerHTML = `<div class="auth"><div class="card">
-    ${inv ? `<div style="text-align:center;margin-bottom:10px">${inv.logo ? `<img src="${h(inv.logo)}" style="max-height:56px">` : `<div class="logo">${h(inv.name)}</div>`}<p class="muted">${h(inv.name)} te invita a conectar tu departamento de compras</p></div>` : `<a href="/" style="text-decoration:none"><div class="logo">IAC</div></a><p class="muted">Compras y ventas recurrentes que se negocian solas, bajo tus reglas.</p>`}
-    <div class="seg" style="margin:10px 0"><button data-m="login" class="${mode === 'login' ? 'on' : ''}">Entrar</button><button data-m="registro" class="${mode === 'registro' ? 'on' : ''}">Crear cuenta de empresa</button></div>
+  const side = inv
+    ? `<div class="inv">${inv.logo ? `<img src="${h(inv.logo)}" alt="">` : h(inv.name)}</div>
+       <div><h2>${h(inv.name)} te invita a <em>conectar tus compras.</em></h2><p>Recibirás sus ofertas de reposición dentro de los límites que tú marques. Tú decides qué datos compartes y puedes pausar la conexión cuando quieras.</p></div>`
+    : `<div><h2>Tus pedidos de siempre, <em>negociados solos.</em></h2><p>Tus agentes de compras y ventas cierran los pedidos recurrentes dentro de tus reglas y te consultan solo cuando algo se sale de ellas.</p>
+       <ul><li>Con tu logo y tus colores</li><li>Tú decides qué se comparte</li><li>14 días de prueba gratis</li></ul></div>`;
+  $('#app').innerHTML = `<div class="auth"><div class="side"><a class="lg" href="/"><span class="mk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h12l-3-3M20 16H8l3 3"/></svg></span>IAC</a>${side}<span style="color:#8a96b4;font-size:13px">Compras y ventas recurrentes entre empresas</span></div>
+    <div class="form"><div class="box">
+    <h1>${mode === 'login' ? 'Bienvenido de nuevo' : 'Crea el espacio de tu empresa'}</h1><p class="muted">${mode === 'login' ? 'Entra para ver la actividad de tus agentes.' : 'En dos minutos tendrás tus agentes listos.'}</p>
+    <div class="seg"><button data-m="login" class="${mode === 'login' ? 'on' : ''}">Entrar</button><button data-m="registro" class="${mode === 'registro' ? 'on' : ''}">Crear cuenta</button></div>
     <form id="f">
       ${mode === 'registro' ? `<label>Nombre de la empresa</label><input name="company" required>
         <label>Tu empresa…</label><select name="role"><option value="comprador" ${inv ? 'selected' : ''}>Compra a proveedores</option><option value="vendedor" ${inv ? '' : 'selected'}>Vende a clientes</option><option value="ambos">Compra y vende</option></select>
         <label>Tu nombre</label><input name="name" required>` : ''}
       <label>Email</label><input name="email" type="email" required autocomplete="email">
       <label>Contraseña</label><input name="password" type="password" required minlength="8" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}">
-      <div class="btns"><button class="p" style="width:100%">${mode === 'login' ? 'Entrar' : 'Crear cuenta y empezar la prueba gratis'}</button></div>
+      <div class="btns"><button class="p big">${mode === 'login' ? 'Entrar' : 'Crear cuenta y empezar gratis'}</button></div>
       <div class="err" id="err"></div>
-    </form></div></div>`;
+    </form></div></div></div>`;
   document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { location.hash = '#' + b.dataset.m + (invite ? '?invita=' + encodeURIComponent(invite) : ''); });
   $('#f').onsubmit = async e => {
     e.preventDefault();
@@ -72,7 +78,7 @@ async function shell(active, content) {
     <div class="brand">${c.logo ? `<img src="${h(c.logo)}" alt="${h(c.name)}">` : `${mono(c.name, c.color, 'mono')}<div class="bn">${h(c.name)}</div>`}</div>
     ${links.map(([k, t, n]) => `<a class="nav ${active === k ? 'on' : ''}" href="#${k}">${t}${n ? `<span class="badge">${n}</span>` : ''}</a>`).join('')}
     <div class="sp"></div>
-    <div class="me">${h(ME.user.name || ME.user.email)}<br><a href="#" id="logout">Cerrar sesión</a></div>
+    <div class="me"><b>${h(ME.user.name || ME.user.email)}</b>${h(c.name)}<br><a href="#" id="logout">Cerrar sesión</a></div>
   </aside><main id="main">${!c.active && !ME.user.is_super && active !== 'membresia' ? `<div class="banner bad">Tu membresía no está activa. <a href="#membresia">Actívala aquí</a> para que tus agentes sigan trabajando.</div>` : ''}${content}</main></div>`;
   $('#logout').onclick = async e => { e.preventDefault(); await api('/logout', { body: {} }); ME = null; location.href = '/'; };
   return stats;
