@@ -25,5 +25,20 @@ const jar = () => { let c = ''; return async (p, body, method) => { const r = aw
   console.log('política', JSON.stringify(await S('/policy/venta')));
   const n2 = await B('/needs', { product_name: 'Tornillo inox M8', qty: 100, target_price: 5.0, max_price: 6.0, max_days: 5 });
   console.log('necesidad 2 (libro abierto)', n2);
+  // Negociación con una persona sin agente (el proveedor vende)
+  const pub = async (tok, body) => { const r = await fetch(base + '/public/n/' + tok, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; };
+  const prods = await S('/products');
+  const e1 = await S('/ext', { side: 'venta', product_id: prods[0].id, qty: 50, days: 3, cp_company: 'Talleres Sur', cp_name: 'Luis', supervisor: 'Salvador' });
+  let v = await pub(e1.token);
+  console.log('EXT venta:', v.messages[0].text);
+  for (const t of ['¿Eres un robot?', 'Te pago 5 euros', 'Vale, 5,60 €', 'Hasta 5,90 y cerramos']) { v = await pub(e1.token, { text: t }); console.log('  humano:', t, '\n  agente:', v.messages.at(-1).text, '[' + v.status + ']'); if (['cerrada','pendiente'].includes(v.status)) break; }
+  // El cliente compra a un proveedor humano y pide hablar con una persona
+  const e2 = await B('/ext', { side: 'compra', product_name: 'Cajas cartón', unit: 'ud', qty: 1000, open_price: 0.40, limit_price: 0.55, cp_company: 'Cartonajes Paco' });
+  v = await pub(e2.token, { text: 'Nuestro precio es 0,70 €' }); console.log('EXT compra agente:', v.messages.at(-1).text);
+  v = await pub(e2.token, { action: 'humano' }); console.log('  pide persona ->', v.status, v.agent_paused);
+  await B('/ext/' + e2.id + '/message', { text: 'Hola, soy Ana. ¿Podéis hacer 0,52?' });
+  await B('/ext/' + e2.id + '/reanudar', {});
+  v = await pub(e2.token, { text: 'Ok, 0,52' }); console.log('  tras reanudar:', v.messages.at(-1).text, '[' + v.status + ']');
+  console.log('stats externos', (await B('/stats')).externos);
   srv.close();
 })().catch(e => { console.error('FALLO', e); srv.close(); process.exit(1); });

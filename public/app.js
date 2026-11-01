@@ -59,6 +59,7 @@ async function shell(active, content) {
   const links = [
     ['inicio', 'Inicio', stats.pendientes],
     ['operaciones', 'Operaciones', 0],
+    ['externos', 'Empresas sin agente', stats.externos],
     isBuyer() && ['comprar', 'Nueva compra', 0],
     isSeller() && ['catalogo', 'Catálogo', 0],
     ['conexiones', isSeller() && !isBuyer() ? 'Clientes conectados' : 'Conexiones', stats.solicitudes],
@@ -319,6 +320,73 @@ async function viewAdmin() {
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = async () => { await api('/admin/companies/' + b.dataset.c, { body: { plan_status: b.dataset.s, days: b.dataset.s === 'active' ? 30 : 0 } }); render(); });
 }
 
+
+// ---------------- empresas sin agente ----------------
+const EXT_ST = { abierta: ['Negociando', 'wait'], humano: ['Atiende una persona', 'wait'], pendiente: ['Pendiente de aprobación', 'wait'], cerrada: ['Cerrada', 'ok'], sin_acuerdo: ['Sin acuerdo', 'no'], cancelada: ['Cancelada', 'mute'] };
+const extPill = s => { const [t, c] = EXT_ST[s] || [s, 'mute']; return `<span class="pill ${c}">${h(t)}</span>`; };
+async function viewExternos() {
+  await shell('externos', '<div id="c"></div>');
+  const [list, prods] = await Promise.all([api('/ext'), isSeller() ? api('/products') : Promise.resolve([])]);
+  const sides = [isBuyer() && 'compra', isSeller() && 'venta'].filter(Boolean);
+  const side = sides.includes(route().q.get('lado')) ? route().q.get('lado') : sides[0];
+  $('#c').innerHTML = `<h1>Empresas sin agente</h1><p class="lead">Tu asistente negocia por escrito con proveedores o clientes que no usan IAC. Les envías un enlace con tu marca, responden con sus palabras y el asistente negocia dentro de tus reglas.</p>
+   <div class="grid"><div class="card"><h2>Nueva negociación</h2>
+     ${sides.length > 1 ? `<div class="seg" style="margin:6px 0 4px">${sides.map(x => `<button type="button" data-side="${x}" class="${x === side ? 'on' : ''}">${x === 'compra' ? 'Quiero comprar' : 'Quiero vender'}</button>`).join('')}</div>` : ''}
+     <form id="f">
+     ${side === 'venta' ? `<label>Producto de tu catálogo</label><select name="product_id" required>${prods.map(p => `<option value="${p.id}" data-l="${p.list_price}" data-m="${p.min_price}">${h(p.name)} · lista ${eur(p.list_price)} · stock ${p.stock}</option>`).join('')}</select>
+        ${prods.length ? '' : '<p class="err">Primero añade productos en el <a href="#catalogo">catálogo</a>.</p>'}
+        <div class="row"><div><label>Precio de salida (€/ud)</label><input name="open_price" type="number" step="0.01" placeholder="Por defecto, el de lista"></div><div><label>Precio mínimo (€/ud)</label><input name="limit_price" type="number" step="0.01" placeholder="Por defecto, tu mínimo"></div></div>`
+      : `<label>Producto</label><input name="product_name" required><div class="row"><div><label>Unidad</label><input name="unit" value="ud"></div><div><label>Precio objetivo (€/ud)</label><input name="open_price" type="number" step="0.01" required></div><div><label>Precio máximo (€/ud)</label><input name="limit_price" type="number" step="0.01" required></div></div>`}
+     <div class="row"><div><label>Cantidad</label><input name="qty" type="number" min="1" required></div><div><label>Plazo de entrega (días)</label><input name="days" type="number" min="0"></div></div>
+     <h3>${side === 'compra' ? 'Proveedor' : 'Cliente'}</h3>
+     <div class="row"><div><label>Empresa</label><input name="cp_company"></div><div><label>Persona de contacto</label><input name="cp_name"></div></div>
+     <label>Email</label><input name="cp_email" type="email">
+     <label>Supervisa la conversación</label><input name="supervisor" value="${h(ME.user.name || '')}">
+     <p class="muted">La otra persona verá siempre que conversa con tu asistente, supervisado por esta persona, y podrá pedir hablar con ella.</p>
+     <div class="btns"><button class="p">Crear enlace de negociación</button></div><div class="err" id="err"></div></form></div>
+   <div class="card"><h2>Negociaciones</h2>${list.length ? `<table><tr><th>Fecha</th><th>Con</th><th>Producto</th><th class="n">Precio</th><th>Estado</th></tr>${list.map(n => `<tr class="click" data-href="#externo/${n.id}"><td>${fdate(n.updated)}</td><td>${n.side === 'compra' ? 'Compra a ' : 'Venta a '}${h(n.cp_company || n.cp_name || '—')}${n.unread ? ' <span class="badge">nuevo</span>' : ''}</td><td>${h(n.product_name)}</td><td class="n">${eur(n.price ?? n.our_offer)}</td><td>${extPill(n.status)}</td></tr>`).join('')}</table>` : '<p class="muted">Todavía no has creado ninguna.</p>'}</div></div>`;
+  bindRows();
+  document.querySelectorAll('[data-side]').forEach(b => b.onclick = () => location.hash = '#externos?lado=' + b.dataset.side);
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const body = Object.fromEntries(new FormData(e.target)); body.side = side;
+    for (const k of ['open_price', 'limit_price', 'days']) if (body[k] === '') delete body[k];
+    try { const r = await api('/ext', { body }); location.hash = '#externo/' + r.id; } catch (x) { $('#err').textContent = x.message; }
+  };
+}
+async function viewExterno(id) {
+  await shell('externos', '<div id="c"></div>');
+  const n = await api('/ext/' + id);
+  const link = `${location.origin}/n/${n.token}`;
+  const c = ME.company;
+  const subject = n.side === 'compra' ? `Solicitud de precio: ${n.product_name}` : `Propuesta: ${n.product_name}`;
+  const mail = `Hola${n.cp_name ? ' ' + n.cp_name : ''},\n\n${n.side === 'compra' ? `En ${c.name} necesitamos ${n.qty} ${n.unit} de ${n.product_name}.` : `En ${c.name} tenemos una propuesta para usted: ${n.qty} ${n.unit} de ${n.product_name}.`} Puede ver los detalles y responder aquí, a cualquier hora:\n${link}\n\nLe atenderá nuestro asistente ${n.side === 'compra' ? 'de compras' : 'comercial'}, supervisado por ${n.supervisor}.\n\nUn saludo,\n${n.supervisor}\n${c.name}`;
+  const WHO = { agent: 'Tu asistente', human: n.cp_company || n.cp_name || 'La otra empresa', staff: n.supervisor || 'Tu equipo', sys: 'Registro' };
+  const CLS = { agent: n.side === 'compra' ? 'buy' : 'sell', human: n.side === 'compra' ? 'sell' : 'buy', staff: n.side === 'compra' ? 'buy' : 'sell', sys: 'sys' };
+  $('#c').innerHTML = `<p><a href="#externos">← Empresas sin agente</a></p>
+   <h1>${n.side === 'compra' ? 'Compra' : 'Venta'} · ${h(n.product_name)}</h1><p class="lead">${extPill(n.status)} ${h(n.cp_company || '')} ${n.cp_name ? '· ' + h(n.cp_name) : ''}</p>
+   <div class="grid" style="grid-template-columns:minmax(290px,1fr) minmax(320px,1.5fr)"><div>
+     <div class="card"><h2>Enlace para ${n.side === 'compra' ? 'el proveedor' : 'el cliente'}</h2><input readonly value="${h(link)}" id="lnk"><div class="btns"><button id="cpl">Copiar enlace</button><button id="cpm">Copiar email listo para enviar</button></div>
+       ${n.cp_email ? `<p class="muted">Envíalo a ${h(n.cp_email)} desde tu correo.</p>` : ''}</div>
+     <div class="card"><h2>Condiciones</h2><table>
+       <tr><td>Cantidad</td><td class="n">${n.qty} ${h(n.unit)}</td></tr>
+       <tr><td>${n.side === 'compra' ? 'Objetivo / máximo' : 'Salida / mínimo'}</td><td class="n">${eur(n.open_price)} / ${eur(n.limit_price)}</td></tr>
+       <tr><td>Última propuesta tuya</td><td class="n">${eur(n.our_offer)}</td></tr>
+       <tr><td>Última cifra suya</td><td class="n">${n.their_offer != null ? eur(n.their_offer) : '—'}</td></tr>
+       ${n.price != null ? `<tr><td>Acordado</td><td class="n"><b>${eur(n.price)} · total ${eur(n.total)}</b></td></tr>` : ''}</table>
+       <div class="btns">${n.status === 'pendiente' ? '<button class="ok" data-a="aprobar">Aprobar acuerdo</button><button class="danger" data-a="rechazar">Rechazar</button>' : ''}
+       ${n.agent_paused && !['cerrada', 'cancelada'].includes(n.status) ? '<button data-a="reanudar">Devolver al asistente</button>' : ''}
+       ${n.status === 'cerrada' ? `<a class="btn p" href="/pedido-externo/${n.id}" target="_blank">Ver pedido con membrete</a>` : ''}
+       ${['abierta', 'humano', 'sin_acuerdo'].includes(n.status) ? '<button class="danger" data-a="cancelar">Cancelar</button>' : ''}</div></div></div>
+     <div class="card"><h2>Conversación</h2>${n.agent_paused ? '<div class="banner warn">El asistente está en pausa: respondes tú.</div>' : ''}
+       <div class="log">${n.messages.map(m => `<div class="msg ${CLS[m.who]}"><div class="who">${h(WHO[m.who])}</div>${h(m.text)}</div>`).join('')}</div>
+       ${['cerrada', 'cancelada'].includes(n.status) ? '' : `<form id="fm" style="margin-top:14px"><textarea name="text" placeholder="Escribe tú personalmente (el asistente se pondrá en pausa)"></textarea><div class="btns"><button class="p">Enviar como ${h(n.supervisor || 'yo')}</button></div></form>`}</div></div>`;
+  const copy = async (txt, ok) => { try { await navigator.clipboard.writeText(txt); toast(ok); } catch { $('#lnk').select(); } };
+  $('#cpl').onclick = () => copy(link, 'Enlace copiado');
+  $('#cpm').onclick = () => copy(`Asunto: ${subject}\n\n${mail}`, 'Email copiado: pégalo en tu correo');
+  document.querySelectorAll('[data-a]').forEach(b => b.onclick = async () => { try { await api(`/ext/${id}/${b.dataset.a}`, { body: {} }); render(); } catch (e) { toast(e.message); } });
+  const fm = $('#fm'); if (fm) fm.onsubmit = async e => { e.preventDefault(); try { await api(`/ext/${id}/message`, { body: { text: new FormData(fm).get('text') } }); render(); } catch (x) { toast(x.message); } };
+}
+
 // ---------------- router ----------------
 async function render() {
   const { r, parts } = route();
@@ -327,7 +395,8 @@ async function render() {
   applyBrand();
   try {
     if (parts[0] === 'operacion') return await viewOperacion(+parts[1]);
-    const V = { inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, catalogo: viewCatalogo, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
+    if (parts[0] === 'externo') return await viewExterno(+parts[1]);
+    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, catalogo: viewCatalogo, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
     await (V[r] || viewInicio)();
   } catch (e) { const m = $('#main'); if (m) m.insertAdjacentHTML('afterbegin', `<div class="banner bad">${h(e.message)}</div>`); }
 }

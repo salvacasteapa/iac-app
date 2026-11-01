@@ -386,7 +386,8 @@ app.get('/api/stats', auth, (req, res) => {
   const conns = one(`SELECT count(*) n FROM connections WHERE (seller_id=? OR buyer_id=?) AND status='activa'`, cid, cid).n;
   const requests = one(`SELECT count(*) n FROM connections WHERE buyer_id=? AND status='pendiente'`, cid).n;
   const auto = one(`SELECT count(*) n FROM deals WHERE (buyer_id=? OR seller_id=?) AND status='cerrado' AND need_buyer_ok=0 AND need_seller_ok=0`, cid, cid).n;
-  res.json({ compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
+  const externos = one(`SELECT count(*) n FROM ext_negotiations WHERE company_id=? AND (unread=1 OR status IN ('pendiente','humano'))`, cid).n;
+  res.json({ externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
 });
 
 // ---------- membresía ----------
@@ -455,6 +456,9 @@ app.get('/pedido/:id', (req, res, next) => {
   <p class="small">Pedido acordado entre los agentes de compras y ventas de ambas empresas, conforme a las políticas fijadas por sus responsables.</p>
   <button onclick="print()">Imprimir o guardar en PDF</button></body></html>`);
 });
+
+// Negociación con empresas que no tienen agente
+require('./external').register(app, { auth, active, bad, str, num, publicCompany, sellerSide, buyerSide, isActive, AGENT_KEY, AGENT_MODEL });
 
 app.get('/healthz', (req, res) => res.send('ok'));
 app.get('/api/plans', (req, res) => res.json(Object.fromEntries(Object.entries(PLANS).map(([k, p]) => [k, { name: p.name, price: p.price }]))));
