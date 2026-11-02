@@ -113,4 +113,4 @@ function register(app, { auth, bad, num, str }) {
   });
 }
 
-module.exports = { register, dispatch, waReady, phoneNorm };
+module.exports = { register, dispatch, waReady, phoneNorm, sendPush };

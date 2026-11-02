@@ -19,7 +19,7 @@ async function viewEspeciales() {
      <form id="f"><div class="row">
        <div id="fcli"><label>Cliente</label><select name="buyer_id"><option value="" id="allc">Todos los clientes</option>${clients.map(c => `<option value="${c.id}">${h(c.name)}</option>`).join('')}</select></div>
        <div id="fprod"><label id="lprod">Artículo</label><select name="product_id"><option value="" id="allp">Toda la gama</option>${prods.map(p => `<option value="${p.id}" data-l="${p.list_price}" data-m="${p.min_price}" data-d="${p.lead_days}">${p.sku ? h(p.sku) + ' · ' : ''}${h(p.name)} · lista ${eur(p.list_price)}</option>`).join('')}</select></div>
-       <div id="fcat"><label>Familia</label><select name="category">${cats.map(c => `<option>${h(c)}</option>`).join('')}</select>${cats.length ? '' : '<p class="err">Pon una categoría a tus artículos en el catálogo.</p>'}</div></div>
+       <div id="fcat"><label>Familia</label><select name="category">${cats.map(c => `<option>${h(c)}</option>`).join('')}</select>${cats.length ? '' : '<p class="err">Pon la familia a tus artículos en el catálogo.</p>'}</div></div>
       <h3>Condiciones</h3>
       <div class="seg" id="mseg"><button type="button" data-m="precio">Precio especial</button><button type="button" data-m="descuento">Descuento máximo</button></div>
       <div class="row"><div id="fprice"><label>Precio especial (€/ud)</label><input name="price" type="number" step="0.01" min="0"></div><div id="fdisc"><label>Descuento máximo sobre lista (%)</label><input name="discount_pct" type="number" step="0.1" min="0" max="90"></div>

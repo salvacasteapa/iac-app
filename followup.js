@@ -130,7 +130,7 @@ function register(app, { auth, active, bad, str, num, admin }) {
   app.get('/api/followup', auth, (req, res) => {
     const cid = req.company.id;
     const clients = all(`SELECT c.id, c.name, c.logo, c.color FROM connections k JOIN companies c ON c.id=k.buyer_id WHERE k.seller_id=? AND k.status IN ('activa','pausada') ORDER BY c.name`, cid)
-      .map(c => { const acc = account(cid, c.id); const s = one(`SELECT count(*) n, coalesce(sum(total),0) t, max(closed) last FROM deals WHERE seller_id=? AND buyer_id=? AND status='cerrado'`, cid, c.id); return { ...c, level: acc?.level || 1, owner_id: acc?.owner_id || null, notes: acc?.notes || '', orders: s.n, revenue: s.t, last: s.last }; });
+      .map(c => { const acc = account(cid, c.id); const s = one(`SELECT count(*) n, coalesce(sum(total),0) t, max(closed) last FROM deals WHERE seller_id=? AND buyer_id=? AND status='cerrado'`, cid, c.id); return { ...c, level: acc?.level || 1, owner_id: acc?.owner_id || null, notes: acc?.notes || '', grupo: acc?.grupo || '', orders: s.n, revenue: s.t, last: s.last }; });
     res.json({ settings: getSettings(cid), clients, users: all('SELECT id, name, email, is_admin FROM users WHERE company_id=?', cid) });
   });
   app.post('/api/followup/client', auth, active, admin, (req, res) => {

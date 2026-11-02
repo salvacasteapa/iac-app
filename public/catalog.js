@@ -33,10 +33,10 @@ const certBadge = c => `<span class="cert">${c.file ? `<a href="${h(c.file.url)}
 async function viewCatalogo() {
   await shell('catalogo', '<div id="c"></div>');
   const prods = await api('/products');
-  const cats = [...new Set(prods.map(p => p.category || 'Sin categoría'))];
+  const cats = [...new Set(prods.map(p => p.category || 'Sin familia'))];
   $('#c').innerHTML = `<div class="head"><div><h1>Catálogo</h1><p class="lead">Cada artículo puede llevar hasta 4 fotos, un vídeo y sus certificados. El agente de ventas nunca baja del precio mínimo.</p></div>
     <div class="btns" style="margin:0"><a class="btn" href="#escaparate/${ME.company.id}">Ver mi escaparate</a><a class="btn p" href="#producto/nuevo">+ Nuevo artículo</a></div></div>
-    ${prods.length ? cats.map(cat => `<h3 class="cat">${h(cat)}</h3><div class="pgrid">${prods.filter(p => (p.category || 'Sin categoría') === cat).map(p => `
+    ${prods.length ? cats.map(cat => `<h3 class="cat">${h(cat)}</h3><div class="pgrid">${prods.filter(p => (p.category || 'Sin familia') === cat).map(p => `
       <a class="pcard" href="#producto/${p.id}"><div class="pimg">${cover(p) ? `<img src="${h(cover(p))}" alt="" loading="lazy">` : noPhoto}${p.video ? '<span class="vtag">▶ Vídeo</span>' : ''}<span class="ptag">${p.photos.length}/${MAX_PHOTOS} fotos</span></div>
         <div class="pbody"><b>${h(p.name)}</b><div class="muted">${p.sku ? `<code class="k">${h(p.sku)}</code> · ` : '<span class="pill no">Sin código</span> · '}stock ${p.stock} · ${p.lead_days} días</div>
         <div class="prow"><span class="price">${eur(p.list_price)}<small> /${h(p.unit)}</small></span><span class="muted">mín. ${eur(p.min_price)}</span></div>
@@ -83,7 +83,7 @@ async function viewProducto(id) {
       <label>Nombre</label><input name="name" value="${h(p.name)}" required>
       <div class="row"><div><label>Código del fabricante *</label><input name="sku" value="${h(p.sku)}" required placeholder="Ej.: TOR-M8-A2" style="font-family:ui-monospace,monospace;font-weight:600"></div><div><label>EAN / código de barras</label><input name="ean" value="${h(p.ean)}" inputmode="numeric" placeholder="Opcional"></div></div>
       <p class="hint" style="margin:6px 0 0">El código del fabricante identifica el artículo aunque cambies el nombre o la descripción. Tus clientes lo vinculan con su propio código en «Códigos de artículo».</p>
-      <label>Categoría</label><input name="category" value="${h(p.category)}" list="cats">
+      <label>Familia</label><input name="category" value="${h(p.category)}" list="cats" placeholder="Ej.: Tornillería">
       <label>Descripción</label><textarea name="description" rows="5" placeholder="Medidas, materiales, usos, ventajas…">${h(p.description)}</textarea>
       <h3>Precios y stock</h3>
       <div class="row"><div><label>Precio de lista (€)</label><input name="list_price" type="number" step="0.01" value="${p.list_price ?? ''}" required></div><div><label>Precio mínimo (€)</label><input name="min_price" type="number" step="0.01" value="${p.min_price ?? ''}" required></div><div><label>Coste (€)</label><input name="cost" type="number" step="0.01" value="${p.cost ?? ''}"></div></div>

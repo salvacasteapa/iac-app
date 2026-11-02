@@ -73,6 +73,7 @@ async function shell(active, content) {
     ['externos', 'Empresas sin agente', stats.externos],
     isBuyer() && ['comprar', 'Nueva compra', 0],
     isSeller() && ['catalogo', 'Catálogo', 0],
+    ['ofertas', 'Ofertas especiales', stats.ofertas],
     isSeller() && ['especiales', 'Autorizaciones especiales', 0],
     isSeller() && ['certificados', 'Certificados', 0],
     isSeller() && ['proyectos', 'Proyectos', 0],
@@ -205,6 +206,7 @@ async function viewComprar() {
       : `<div class="banner bad" style="margin-top:10px">El código ${h(v)} no está vinculado y confirmado. <a href="#codigos">Vincúlalo aquí</a>.</div>`;
   };
   $('#bcode').oninput = codeInfo; codeInfo();
+  { const q = route().q; if (q.get('producto')) { $('#pname').value = q.get('producto'); const f = $('#f'); if (q.get('cantidad')) f.qty.value = q.get('cantidad'); if (q.get('precio')) { f.target_price.value = q.get('precio'); f.max_price.value = q.get('precio'); } } }
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const btn = e.target.querySelector('button'); btn.disabled = true;
@@ -452,7 +454,7 @@ async function render() {
     if (parts[0] === 'proyecto') return await viewProyecto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
     if (parts[0] === 'cita') return await viewCita(parts[1] === 'nueva' ? 'nueva' : +parts[1]);
     if (parts[0] === 'escaparate') return await viewEscaparate(+parts[1]);
-    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, agenda: viewAgenda, avisos: viewAvisos, especiales: viewEspeciales, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
+    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, agenda: viewAgenda, avisos: viewAvisos, especiales: viewEspeciales, ofertas: viewOfertas, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
     await (V[r] || viewInicio)();
   } catch (e) { const m = $('#main'); if (m) m.insertAdjacentHTML('afterbegin', `<div class="banner bad">${h(e.message)}</div>`); }
 }

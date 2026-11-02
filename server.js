@@ -468,7 +468,8 @@ app.get('/api/stats', auth, (req, res) => {
   const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T99`;
   const agenda = one(`SELECT count(*) n FROM agenda WHERE company_id=? AND user_id=? AND status='pendiente' AND start<=?`, cid, req.user.id, today).n;
   const avisos = all(`SELECT recipients FROM alerts WHERE company_id=? AND status='nuevo' AND id NOT IN (SELECT alert_id FROM alert_reads WHERE user_id=?)`, cid, req.user.id).filter(a => JSON.parse(a.recipients).includes(req.user.id)).length;
-  res.json({ avisos, agenda, codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
+  const ofertas = buyerSide(req.company) ? require('./ofertas').newCount(cid) : 0;
+  res.json({ ofertas, avisos, agenda, codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
 });
 
 // ---------- membresía ----------
@@ -583,6 +584,7 @@ require('./notify').register(app, { auth, bad, num, str });
 followup.register(app, { auth, active, bad, str, num, admin });
 specials.register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./agenda').register(app, { auth, active, bad, str, num });
+require('./ofertas').register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
 
 // Negociación con empresas que no tienen agente

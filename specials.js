@@ -33,7 +33,10 @@ function authState(a) {
 /** Precio suelo y de salida que permite una autorización sobre un artículo. */
 function authPrices(a, p) {
   if (a.price_mode === 'precio') return { floor: r2(a.price), open: r2(Math.min(p.list_price, a.price)), fixed: true };
-  return { floor: r2(p.list_price * (1 - a.discount_pct / 100)), open: p.list_price };
+  const off = r2(p.list_price * (1 - a.discount_pct / 100));
+  // Una oferta especial enviada al cliente es un precio cerrado: se aplica tal cual, sin regatear
+  if (a.offer_id) return { floor: off, open: off, fixed: true };
+  return { floor: off, open: p.list_price };
 }
 /** Descripción corta, para el registro de la negociación y el pedido. */
 function authText(a, p) {
