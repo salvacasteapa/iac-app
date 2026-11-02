@@ -392,7 +392,9 @@ app.get('/api/stats', auth, (req, res) => {
   const externos = one(`SELECT count(*) n FROM ext_negotiations WHERE company_id=? AND (unread=1 OR status IN ('pendiente','humano'))`, cid).n;
   const codigos = all('SELECT * FROM item_links WHERE seller_id=? OR buyer_id=?', cid, cid)
     .filter(l => { const st = codes.linkState(l, one('SELECT * FROM products WHERE id=?', l.product_id)); return st.state === 'cambiado' ? l.buyer_id === cid : !st.ok && st.state !== 'roto' && !(l.seller_id === cid ? l.seller_ok : l.buyer_ok); }).length;
-  res.json({ codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
+  const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T99`;
+  const agenda = one(`SELECT count(*) n FROM agenda WHERE company_id=? AND user_id=? AND status='pendiente' AND start<=?`, cid, req.user.id, today).n;
+  res.json({ agenda, codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
 });
 
 // ---------- membresía ----------
@@ -465,6 +467,7 @@ app.get('/pedido/:id', (req, res, next) => {
 
 // Catálogo enriquecido, certificados y proyectos
 codes.register(app, { auth, active, bad, str });
+require('./agenda').register(app, { auth, active, bad, str, num });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
 
 // Negociación con empresas que no tienen agente

@@ -107,5 +107,19 @@ const jar = () => { let c = ''; return async (p, body, method) => { const r = aw
   let v3 = await pub(e3.token); assert.equal(v3.mfr_code, 'TOR-M8-A2-V2'); assert.equal(v3.cp_code_ok, false);
   v3 = await pub(e3.token, { action: 'codigos', code: 'te-99' }); assert.equal(v3.buyer_code, 'TE-99'); assert.ok(v3.cp_code_ok);
   console.log('doble código OK:', dv.mfr_code, '=', dv.buyer_code);
+  // Agenda: llamadas, visitas y reuniones con motivo, resultado y siguiente paso
+  const meta = await S('/agenda/meta'); assert.ok(meta.motives.oferta && meta.motives.nuevo_producto && meta.motives.regular);
+  await assert.rejects(S('/agenda', { kind: 'llamada', motive: 'oferta', start: '2026-11-10T10:00' }), /con quién/);
+  const ag = await S('/agenda', { kind: 'llamada', motive: 'oferta', other_id: sMe.company.id + 1, contact_name: 'Ana', contact_phone: '600 000 000', start: '2026-11-10T10:00', product_id: tor.id, offer_price: 6.4 });
+  const ga = await S('/agenda/' + ag.id); assert.equal(ga.who, 'Industrias Norte'); assert.equal(ga.minutes, 15); assert.equal(ga.product.id, tor.id);
+  const rr = await S(`/agenda/${ag.id}/resultado`, { result: 'interesado', result_notes: 'Quiere 500 ud', next: { kind: 'visita', motive: 'seguimiento_oferta', start: '2026-11-13T11:00' } });
+  const nx = await S('/agenda/' + rr.next); assert.equal(nx.kind, 'visita'); assert.equal(nx.parent_id, ag.id); assert.equal(nx.history[0].result, 'interesado');
+  await S(`/agenda/${rr.next}/aplazar`, { start: '2026-11-14T12:00' });
+  const wk = await S('/agenda?from=2026-11-09&to=2026-11-15'); assert.equal(wk.length, 2);
+  await assert.rejects(B('/agenda/' + ag.id)); // otra empresa no la ve
+  const ics = await (await fetch(`http://localhost:${srv.address().port}/agenda/${ag.id}.ics`, { headers: { cookie: sc } })).text();
+  assert.match(ics, /BEGIN:VEVENT/); assert.match(ics, /DTSTART:20261110T100000/);
+  const sg = await S('/agenda-sugerencias'); assert.ok(Array.isArray(sg));
+  console.log('agenda OK:', sg.length, 'sugerencias;', sg.map(x => x.motive).join(', '));
   srv.close();
 })().catch(e => { console.error('FALLO', e); srv.close(); process.exit(1); });

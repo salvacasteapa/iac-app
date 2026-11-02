@@ -99,8 +99,8 @@ function register(app, { auth, active, bad, str, num, sellerOnly, publicCompany,
   app.get('/api/products/:id', auth, sellerOnly, (req, res) => { const p = one('SELECT * FROM products WHERE id=? AND company_id=? AND active=1', +req.params.id, req.company.id); p ? res.json(productView(p)) : bad(res, 'No encontrado', 404); });
   app.post('/api/products', auth, active, sellerOnly, (req, res) => {
     const p = productIn(req.body || {}, req.company.id), e = invalid(p, req.company.id); if (e) return bad(res, e);
-    const r = run(`INSERT INTO products (company_id, sku, ean, name, unit, category, description, list_price, min_price, cost, stock, lead_days, photos, video, certs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      req.company.id, p.sku, p.ean, p.name, p.unit, p.category, p.description, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, p.photos, p.video, p.certs);
+    const r = run(`INSERT INTO products (created, company_id, sku, ean, name, unit, category, description, list_price, min_price, cost, stock, lead_days, photos, video, certs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      now(), req.company.id, p.sku, p.ean, p.name, p.unit, p.category, p.description, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, p.photos, p.video, p.certs);
     res.json({ ok: true, id: Number(r.lastInsertRowid) });
   });
   app.put('/api/products/:id', auth, active, sellerOnly, (req, res) => {
