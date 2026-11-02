@@ -64,7 +64,7 @@ async function viewCita(id) {
   await shell('agenda', '<div id="c"></div>');
   const isNew = id === 'nueva', q = route().q;
   const [M, conns, users, prods] = await Promise.all([agMeta(), api('/connections'), api('/users'), isSeller() ? api('/products') : isBuyer() ? api('/catalog') : []]);
-  const a = isNew ? { kind: q.get('kind') || 'llamada', motive: q.get('motive') || '', other_id: +q.get('other_id') || null, contact_company: q.get('contact_company') || '', contact_name: q.get('contact_name') || '', contact_email: q.get('contact_email') || '', product_id: +q.get('product_id') || null, notes: q.get('notes') || '', status: 'pendiente', user_id: ME.user.id, minutes: null, history: [] } : await api('/agenda/' + id);
+  const a = isNew ? { kind: q.get('kind') || 'llamada', motive: q.get('motive') || '', other_id: +q.get('other_id') || null, contact_company: q.get('contact_company') || '', contact_name: q.get('contact_name') || '', contact_email: q.get('contact_email') || '', product_id: +q.get('product_id') || null, notes: q.get('notes') || '', status: 'pendiente', user_id: +q.get('user') || ME.user.id, minutes: null, history: [] } : await api('/agenda/' + id);
   const others = conns.filter(c => c.status === 'activa');
   if (isNew) { const d = new Date(); d.setDate(d.getDate() + (d.getHours() >= 17 ? 1 : 0)); d.setHours(d.getHours() >= 17 ? 9 : d.getHours() + 1, 0, 0, 0); a.start = q.get('start') || localDT(d); }
   let kind = a.kind;
@@ -132,7 +132,7 @@ async function viewCita(id) {
   $('#motive').onchange = sync; $('#other').onchange = sync; sync();
   $('#f').onsubmit = async e => {
     e.preventDefault(); const body = { ...Object.fromEntries(new FormData(e.target)), kind, id: isNew ? undefined : id, parent_id: q.get('parent') || undefined };
-    try { const r = await api('/agenda', { body }); toast('Guardado en la agenda'); location.hash = '#cita/' + r.id; if (!isNew) render(); } catch (x) { $('#err').textContent = x.message; }
+    try { const r = await api('/agenda', { body }); if (isNew && q.get('alerta')) await api(`/alerts/${q.get('alerta')}/agendado`, { body: { cita_id: r.id } }).catch(() => { }); toast('Guardado en la agenda'); location.hash = '#cita/' + r.id; if (!isNew) render(); } catch (x) { $('#err').textContent = x.message; }
   };
   const del = $('#del'); if (del) del.onclick = async () => { if (!confirm('¿Borrar esta cita?')) return; await api('/agenda/' + id, { method: 'DELETE' }); location.hash = '#agenda'; };
   if (!isNew && !done) {

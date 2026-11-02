@@ -52,6 +52,9 @@ function push(n, who, text) {
   return msgs;
 }
 function save(n) {
+  const before = one('SELECT status FROM ext_negotiations WHERE id=?', n.id)?.status;
+  const out = { cerrada: 'ganado', sin_acuerdo: 'perdido', pendiente: 'standby', humano: 'standby' }[n.status];
+  if (out && before !== n.status) setImmediate(() => require('./followup').extAlert({ ...n, ...one('SELECT * FROM ext_negotiations WHERE id=?', n.id) }, out));
   run(`UPDATE ext_negotiations SET our_offer=?, their_offer=?, price=?, total=?, rounds=?, status=?, agent_paused=?, messages=?, unread=?, updated=?, closed=? WHERE id=?`,
     n.our_offer, n.their_offer, n.price, n.total, n.rounds, n.status, n.agent_paused ? 1 : 0, n.messages, n.unread, now(), n.closed || null, n.id);
 }

@@ -269,3 +269,25 @@ h2.sec{font-size:20px;margin:8px 0 14px}
 .scope.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 6%,#fff)}
 .seg button:disabled{opacity:.4}
 @media (max-width:700px){ .scopes{grid-template-columns:1fr} }
+
+/* ---------- avisos y seguimiento ---------- */
+.pill.lv1{background:#eef0f5;color:#5b6478}.pill.lv2{background:#e9f0ff;color:#2f6bff}.pill.lv3{background:#fff3dc;color:#a76a00}.pill.lv4{background:#fdecea;color:#d03b2f}
+.alert{background:var(--card);border:1px solid var(--line);border-left:5px solid #cfd5e2;border-radius:14px;padding:14px 18px;margin-bottom:10px;box-shadow:var(--sh)}
+.alert.lv2{border-left-color:#2f6bff}.alert.lv3{border-left-color:#e39a00}.alert.lv4{border-left-color:#d03b2f}
+.alert.unread{background:color-mix(in srgb,var(--brand) 4%,#fff)}
+.al-h{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px}
+.al-t{display:block;font-weight:700;font-size:16px;color:var(--ink);text-decoration:none;margin:8px 0 2px}
+.al-t:hover{color:var(--brand)}
+.alert .btns,.pop .btns{margin-top:10px;flex-wrap:wrap}
+.sugg{margin-top:8px;font-size:13.5px;font-weight:600;color:var(--brand)}
+#pops{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;flex-direction:column;gap:10px;max-width:380px;width:calc(100% - 36px)}
+.pop{position:relative;background:#fff;border:1px solid var(--line);border-left:5px solid #2f6bff;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(8,14,32,.25);animation:popin .25s ease-out}
+.pop.lv3{border-left-color:#e39a00}.pop.lv4{border-left-color:#d03b2f}
+.pop .pt{display:flex;gap:6px;margin-bottom:6px}
+.pop b{display:block;padding-right:24px}
+.pop .muted{font-size:13px}
+.pop .btns .btn,.pop .btns button{padding:7px 11px;font-size:13px}
+.pop .x{position:absolute;right:8px;top:8px;width:28px;height:28px;padding:0;border:0;background:none;font-size:20px;color:var(--quiet)}
+@keyframes popin{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
+table.rules td{vertical-align:middle}
+.inl{display:flex;align-items:center;gap:6px}.inl span{color:var(--quiet);font-size:13px}.inl select{min-width:110px}

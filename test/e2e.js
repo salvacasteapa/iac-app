@@ -149,5 +149,26 @@ const jar = () => { let c = ''; return async (p, body, method) => { const r = aw
   const w4 = await B('/deals/' + (await B('/deals')).find(x => x.need?.id === q4.id && x.chosen).id);
   assert.equal(w4.special.id, sf.id);
   console.log('autorizaciones OK:', w1.price, w2.price, w4.price);
+  // Seguimiento escalado y avisos
+  const al0 = await S('/alerts'); assert.ok(al0.length > 0, 'hay avisos de operaciones');
+  assert.ok(al0.some(a => a.outcome === 'ganado') && al0.some(a => a.outcome === 'standby'));
+  await S('/followup/client', { buyer_id: bid, level: 4, owner_id: '' });
+  const fq = await B('/needs', { buyer_code: 'NOR-4471', qty: 5, target_price: 5.5, max_price: 6.2, max_days: 6 });
+  const top = (await S('/alerts'))[0];
+  assert.equal(top.level, 4); assert.equal(top.outcome, 'ganado'); assert.equal(top.suggest_kind, 'reunion'); assert.ok(top.for_me);
+  assert.ok((await S('/alerts/unread')).some(a => a.id === top.id));
+  assert.ok((await S('/stats')).avisos >= 1);
+  const ct = await S('/agenda', { kind: 'reunion', motive: 'revision', other_id: bid, start: '2026-11-20T10:00' });
+  await S(`/alerts/${top.id}/agendado`, { cita_id: ct.id });
+  assert.equal((await S('/alerts')).find(a => a.id === top.id).status, 'agendado');
+  await S('/followup/settings', { importe: { 2: 100000, 3: null, 4: null }, perdida_sube: false }, 'PUT');
+  await S('/followup/client', { buyer_id: bid, level: 1 });
+  await B('/needs', { buyer_code: 'NOR-4471', qty: 5, target_price: 5.5, max_price: 6.2, max_days: 6 });
+  const low = (await S('/alerts'))[0]; assert.equal(low.level, 1); assert.equal(low.status, 'registrado', 'nivel 1: solo registro');
+  // externos también avisan
+  const e5 = await S('/ext', { side: 'venta', product_id: tor.id, qty: 5, cp_company: 'Talleres Oeste' });
+  await pub(e5.token, { action: 'humano' }); await new Promise(r => setTimeout(r, 30));
+  assert.ok((await S('/alerts')).some(a => a.ext_id === e5.id && a.outcome === 'standby'));
+  console.log('seguimiento OK: avisos', (await S('/alerts')).length);
   srv.close();
 })().catch(e => { console.error('FALLO', e); srv.close(); process.exit(1); });

@@ -6,6 +6,7 @@ const { one, all, run, now, getPolicy, setPolicy } = require('./db');
 const { negotiate, scoreOffers, approvals } = require('./negotiation');
 const codes = require('./codes');
 const specials = require('./specials');
+const followup = require('./followup');
 
 const PORT = +process.env.PORT || 8080;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -302,7 +303,8 @@ app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
       const pastOrders = one(`SELECT count(*) n FROM deals WHERE seller_id=? AND buyer_id=? AND status='cerrado'`, p.company_id, buyer.id).n;
       offers.push({ ...base, ...r, pastOrders, sp });
     } else {
-      run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, motivo, log, created) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, nid, p.company_id, buyer.id, p.id, base.mfr_code, base.buyer_code, base.link_id, 'sin_acuerdo', r.motivo, JSON.stringify(r.log), now());
+      const lost = run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, motivo, log, created) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, nid, p.company_id, buyer.id, p.id, base.mfr_code, base.buyer_code, base.link_id, 'sin_acuerdo', r.motivo, JSON.stringify(r.log), now());
+      followup.dealAlert({ ...one('SELECT * FROM deals WHERE id=?', Number(lost.lastInsertRowid)), qty: need.qty, price: r.last?.seller }, 'perdido', 'Sin acuerdo: ' + (r.motivo || ''));
     }
   }
   if (!offers.length) {
@@ -320,9 +322,10 @@ app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
     if (status === 'pendiente') log.push({ who: 'sys', text: `Pendiente de aprobación: ${[ap.buyer && 'jefe de compras', ap.seller && 'jefe de ventas'].filter(Boolean).join(' y ')}.` });
     if (status === 'cerrado') log.push({ who: 'sys', text: 'Dentro de los límites de los dos gestores. Pedido cerrado automáticamente.' });
     if (o.link_id) log.unshift({ who: 'sys', text: `Artículo verificado por doble código: fabricante ${o.mfr_code} = cliente ${o.buyer_code} (confirmado por las dos empresas).` });
-    run(`INSERT INTO deals (auth_id, need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, price, qty, total, lead_days, partial, score, chosen, need_buyer_ok, need_seller_ok, buyer_ok, seller_ok, log, created, closed)
+    const ins = run(`INSERT INTO deals (auth_id, need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, price, qty, total, lead_days, partial, score, chosen, need_buyer_ok, need_seller_ok, buyer_ok, seller_ok, log, created, closed)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.auth ? o.auth.id : null, nid, o.seller_id, o.buyer_id, o.product_id, o.mfr_code, o.buyer_code, o.link_id, status, o.price, o.qty, o.total, o.lead_days, o.partial ? 1 : 0, o.score, chosen ? 1 : 0,
       ap.buyer ? 1 : 0, ap.seller ? 1 : 0, ap.buyer ? 0 : 1, ap.seller ? 0 : 1, JSON.stringify(log), now(), status === 'cerrado' ? now() : null);
+    followup.dealAlert(one('SELECT * FROM deals WHERE id=?', Number(ins.lastInsertRowid)), status === 'cerrado' ? 'ganado' : status === 'pendiente' ? 'standby' : 'perdido', status === 'descartada' ? 'El cliente eligió la oferta de otro proveedor.' : status === 'pendiente' ? 'Falta la aprobación de ' + [ap.buyer && 'compras del cliente', ap.seller && 'tu jefe de ventas'].filter(Boolean).join(' y ') + '.' : '');
     if (status === 'cerrado') run('UPDATE products SET stock=max(0, stock-?) WHERE id=?', o.qty, o.product_id);
   });
   const top = offers[0];
@@ -371,6 +374,7 @@ app.post('/api/deals/:id/:action', auth, active, (req, res) => {
     log.push({ who: 'sys', text: `Rechazado por ${isB ? 'el jefe de compras' : 'el jefe de ventas'} (${req.user.name || req.user.email}).` });
     run('UPDATE deals SET status=?, log=?, closed=? WHERE id=?', 'rechazado', JSON.stringify(log), now(), d.id);
     run('UPDATE needs SET status=? WHERE id=?', 'rechazada', d.need_id);
+    followup.dealAlert(d, 'perdido', `Rechazado por ${isB ? 'el cliente' : 'tu jefe de ventas'}.`);
     return res.json({ ok: true });
   }
   if (req.params.action !== 'aprobar') return bad(res, 'Acción no válida');
@@ -383,6 +387,7 @@ app.post('/api/deals/:id/:action', auth, active, (req, res) => {
   const done = bok && sok;
   if (done) { log.push({ who: 'sys', text: 'Pedido cerrado.' }); run('UPDATE products SET stock=max(0, stock-?) WHERE id=?', d.qty, d.product_id); run('UPDATE needs SET status=? WHERE id=?', 'cerrada', d.need_id); }
   run('UPDATE deals SET buyer_ok=?, seller_ok=?, status=?, log=?, closed=? WHERE id=?', bok, sok, done ? 'cerrado' : 'pendiente', JSON.stringify(log), done ? now() : null, d.id);
+  if (done) followup.dealAlert(d, 'ganado', 'Aprobado y cerrado.');
   res.json({ ok: true });
 });
 
@@ -401,7 +406,8 @@ app.get('/api/stats', auth, (req, res) => {
     .filter(l => { const st = codes.linkState(l, one('SELECT * FROM products WHERE id=?', l.product_id)); return st.state === 'cambiado' ? l.buyer_id === cid : !st.ok && st.state !== 'roto' && !(l.seller_id === cid ? l.seller_ok : l.buyer_ok); }).length;
   const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T99`;
   const agenda = one(`SELECT count(*) n FROM agenda WHERE company_id=? AND user_id=? AND status='pendiente' AND start<=?`, cid, req.user.id, today).n;
-  res.json({ agenda, codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
+  const avisos = all(`SELECT recipients FROM alerts WHERE company_id=? AND status='nuevo' AND id NOT IN (SELECT alert_id FROM alert_reads WHERE user_id=?)`, cid, req.user.id).filter(a => JSON.parse(a.recipients).includes(req.user.id)).length;
+  res.json({ avisos, agenda, codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
 });
 
 // ---------- membresía ----------
@@ -475,6 +481,7 @@ app.get('/pedido/:id', (req, res, next) => {
 
 // Catálogo enriquecido, certificados y proyectos
 codes.register(app, { auth, active, bad, str });
+followup.register(app, { auth, active, bad, str, num, admin });
 specials.register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./agenda').register(app, { auth, active, bad, str, num });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
