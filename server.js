@@ -210,22 +210,7 @@ Responde SOLO con un JSON: {"cambios": <objeto con SOLO las claves de la políti
 });
 
 // ---------- catálogo del vendedor ----------
-const productIn = b => ({ sku: str(b.sku, 60), name: str(b.name, 160), unit: str(b.unit, 20) || 'ud', list_price: num(b.list_price), min_price: num(b.min_price), cost: num(b.cost) ?? 0, stock: Math.floor(num(b.stock) ?? 0), lead_days: Math.floor(num(b.lead_days) ?? 3) });
-app.get('/api/products', auth, sellerOnly, (req, res) => res.json(all('SELECT * FROM products WHERE company_id=? AND active=1 ORDER BY name', req.company.id)));
-app.post('/api/products', auth, active, sellerOnly, (req, res) => {
-  const p = productIn(req.body || {});
-  if (!p.name || p.list_price === null || p.min_price === null || p.min_price > p.list_price) return bad(res, 'Nombre, precio de lista y precio mínimo (no mayor que el de lista)');
-  run('INSERT INTO products (company_id, sku, name, unit, list_price, min_price, cost, stock, lead_days) VALUES (?,?,?,?,?,?,?,?,?)',
-    req.company.id, p.sku, p.name, p.unit, p.list_price, p.min_price, p.cost, p.stock, p.lead_days);
-  res.json({ ok: true });
-});
-app.put('/api/products/:id', auth, active, sellerOnly, (req, res) => {
-  const p = productIn(req.body || {});
-  if (!p.name || p.list_price === null || p.min_price === null || p.min_price > p.list_price) return bad(res, 'Revisa nombre y precios');
-  run('UPDATE products SET sku=?, name=?, unit=?, list_price=?, min_price=?, cost=?, stock=?, lead_days=? WHERE id=? AND company_id=?',
-    p.sku, p.name, p.unit, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, +req.params.id, req.company.id);
-  res.json({ ok: true });
-});
+// Rutas de artículos: ver showcase.js (fotos, vídeo, certificados)
 app.delete('/api/products/:id', auth, active, sellerOnly, (req, res) => { run('UPDATE products SET active=0 WHERE id=? AND company_id=?', +req.params.id, req.company.id); res.json({ ok: true }); });
 
 // ---------- conexiones ----------
@@ -236,7 +221,7 @@ app.get('/api/connections', auth, (req, res) => {
   res.json(rows.map(r => ({
     id: r.id, status: r.status, message: r.message, created: r.created,
     as: r.seller_id === cid ? 'vendedor' : 'comprador',
-    other: r.seller_id === cid ? { name: r.b_name, logo: r.b_logo, color: r.b_color, code: r.b_code } : { name: r.s_name, logo: r.s_logo, color: r.s_color, code: r.s_code },
+    other: r.seller_id === cid ? { id: r.buyer_id, name: r.b_name, logo: r.b_logo, color: r.b_color, code: r.b_code } : { id: r.seller_id, name: r.s_name, logo: r.s_logo, color: r.s_color, code: r.s_code },
     shared: r.seller_id === cid && r.status === 'activa' ? getPolicy(r.buyer_id, 'compra').compartir : null
   })));
 });
@@ -267,7 +252,8 @@ app.get('/api/catalog', auth, buyerOnly, (req, res) => {
     JOIN companies c ON c.id=p.company_id WHERE p.active=1 ORDER BY p.name`, req.company.id);
   res.json(rows.filter(p => getPolicy(p.seller_id, 'venta').mostrar.catalogo).map(p => {
     const m = getPolicy(p.seller_id, 'venta').mostrar;
-    return { name: p.name, unit: p.unit, seller: p.seller_name, list_price: p.list_price, stock: m.stock ? p.stock : null, lead_days: m.plazo ? p.lead_days : null, cost: m.costes ? p.cost : null };
+    const ph = (() => { try { return JSON.parse(p.photos || '[]')[0]; } catch { return null; } })();
+    return { id: p.id, seller_id: p.seller_id, photo: ph ? `/media/${ph}` : null, category: p.category, name: p.name, unit: p.unit, seller: p.seller_name, list_price: p.list_price, stock: m.stock ? p.stock : null, lead_days: m.plazo ? p.lead_days : null, cost: m.costes ? p.cost : null };
   }));
 });
 
@@ -456,6 +442,9 @@ app.get('/pedido/:id', (req, res, next) => {
   <p class="small">Pedido acordado entre los agentes de compras y ventas de ambas empresas, conforme a las políticas fijadas por sus responsables.</p>
   <button onclick="print()">Imprimir o guardar en PDF</button></body></html>`);
 });
+
+// Catálogo enriquecido, certificados y proyectos
+require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
 
 // Negociación con empresas que no tienen agente
 require('./external').register(app, { auth, active, bad, str, num, publicCompany, sellerSide, buyerSide, isActive, AGENT_KEY, AGENT_MODEL });

@@ -45,6 +45,25 @@ button:disabled{opacity:.5;cursor:default}
 .quick button{font-size:13.5px;padding:7px 12px}
 .err{color:#b42318;font-size:13px;margin-top:6px}
 .hidden{display:none!important}
+.sc{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 24px rgba(16,24,40,.06);padding:14px 16px;margin:12px 0}
+.sc summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.sc summary::-webkit-details-marker{display:none}
+.sc summary::after{content:"Ver";font-size:13px;color:var(--brand);font-weight:600}
+.sc[open] summary::after{content:"Ocultar"}
+.gal{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}
+.gal .big{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;background:#eef0f5}
+.th{display:flex;gap:6px;flex-wrap:wrap}.th img{width:64px;height:48px;object-fit:cover;border-radius:8px;cursor:pointer;opacity:.6;border:2px solid transparent}.th img.on{opacity:1;border-color:var(--brand)}
+.sc video{width:100%;border-radius:12px;background:#000;max-height:320px;margin-top:8px}
+.sc .desc{white-space:pre-wrap;font-size:14.5px;margin:10px 0 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:99px;background:#e6f5ee;color:#0b7a52;text-decoration:none}
+.prj{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px}
+.prj button{padding:0;text-align:left;border-radius:12px;overflow:hidden;background:#fff}
+.prj img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#eef0f5}
+.prj span{display:block;padding:8px 10px;font-size:13px}
+.pv{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.q{border-left:3px solid var(--brand);background:#f8f9fc;border-radius:0 10px 10px 0;padding:8px 12px;margin:8px 0;font-size:14px}
+.q i{display:block}.q small{color:var(--quiet)}
 .small{font-size:12px;color:var(--quiet);text-align:center;margin-top:8px}
 </style>
 </head>
@@ -53,6 +72,7 @@ button:disabled{opacity:.5;cursor:default}
 <main><div class="wrap">
   <div class="deal" id="deal"></div>
   <div class="notice"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span id="notice"></span></div>
+  <div id="sc"></div>
   <div id="status"></div>
   <div class="log" id="log"></div>
 </div></main>
@@ -104,7 +124,22 @@ $('#f').onsubmit = e => { e.preventDefault(); const text = $('#t').value.trim();
 $('#t').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#f').requestSubmit(); } });
 $('#accept').onclick = () => send({ action: 'aceptar' });
 $('#human').onclick = () => send({ action: 'humano' });
-load(); setInterval(() => { if (!busy && !document.hidden) load(); }, 6000);
+function gallery(photos){ if(!photos.length) return ''; return `<div class="gal"><img class="big" src="${h(photos[0].url)}" alt="">${photos.length>1?`<div class="th">${photos.map((x,i)=>`<img src="${h(x.url)}" class="${i?'':'on'}" alt="">`).join('')}</div>`:''}</div>`; }
+function bindGal(root){ root.querySelectorAll('.gal').forEach(g=>g.querySelectorAll('.th img').forEach(t=>t.onclick=()=>{ g.querySelector('.big').src=t.src; g.querySelectorAll('.th img').forEach(x=>x.classList.toggle('on',x===t)); })); }
+async function loadShowcase(){
+  try {
+    const r = await fetch('/api/public/showcase/' + token); const s = r.ok ? await r.json() : null; if (!s) return;
+    const p = s.products[0]; let out = '';
+    if (p && (p.photos.length || p.video || p.description || p.certs.length)) out += `<details class="sc"${innerWidth > 700 ? " open" : ""}><summary>${h(p.name)} · fotos y ficha</summary>${gallery(p.photos)}${p.video?`<video src="${h(p.video.url)}" controls preload="metadata"></video>`:''}${p.description?`<p class="desc">${h(p.description)}</p>`:''}${p.certs.length?`<div class="chips">${p.certs.map(c=>`<${c.file?`a href="${h(c.file.url)}" target="_blank" rel="noopener"`:'span'} class="chip">✓ ${h(c.name)}</${c.file?'a':'span'}>`).join('')}</div>`:''}</details>`;
+    const certs = s.certificates.filter(c => !p || !p.certs.some(x => x.id === c.id));
+    if (certs.length) out += `<details class="sc"><summary>Certificados de ${h(s.company.name)}</summary><div class="chips">${certs.map(c=>`<${c.file?`a href="${h(c.file.url)}" target="_blank" rel="noopener"`:'span'} class="chip">✓ ${h(c.name)}${c.issuer?' · '+h(c.issuer):''}</${c.file?'a':'span'}>`).join('')}</div></details>`;
+    if (s.projects.length) out += `<details class="sc"><summary>Proyectos realizados (${s.projects.length})</summary><div class="prj">${s.projects.map((j,i)=>`<button type="button" data-j="${i}">${j.photos[0]?`<img src="${h(j.photos[0].url)}" alt="">`:''}<span><b>${h(j.title)}</b><br>${[j.client,j.location,j.year].filter(Boolean).map(h).join(' · ')}</span></button>`).join('')}</div><div id="pv"></div></details>`;
+    const box = $('#sc'); box.innerHTML = out; bindGal(box);
+    box.querySelectorAll('[data-j]').forEach(b => b.onclick = () => { const j = s.projects[+b.dataset.j]; const pv = $('#pv');
+      pv.innerHTML = `<div class="pv"><b>${h(j.title)}</b>${gallery(j.photos)}${j.description?`<p class="desc">${h(j.description)}</p>`:''}${j.comments.map(c=>`<div class="q"><i>“${h(c.text)}”</i><small>— ${h(c.author||'Cliente')}${c.date?' · '+h(c.date):''}</small></div>`).join('')}</div>`; bindGal(pv); pv.scrollIntoView({behavior:'smooth',block:'nearest'}); });
+  } catch {}
+}
+load(); loadShowcase(); setInterval(() => { if (!busy && !document.hidden) load(); }, 6000);
 </script>
 </body>
 </html>

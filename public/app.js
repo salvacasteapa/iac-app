@@ -68,6 +68,8 @@ async function shell(active, content) {
     ['externos', 'Empresas sin agente', stats.externos],
     isBuyer() && ['comprar', 'Nueva compra', 0],
     isSeller() && ['catalogo', 'Catálogo', 0],
+    isSeller() && ['certificados', 'Certificados', 0],
+    isSeller() && ['proyectos', 'Proyectos', 0],
     ['conexiones', isSeller() && !isBuyer() ? 'Clientes conectados' : 'Conexiones', stats.solicitudes],
     ['politicas', 'Reglas de los agentes', 0],
     ['empresa', 'Mi empresa', 0],
@@ -176,7 +178,8 @@ async function viewComprar() {
      <div class="row"><div><label>Consumo mensual</label><input name="consumption" type="number" min="0"></div><div><label>Previsión próximo mes</label><input name="forecast" type="number" min="0"></div><div><label>Tu stock actual</label><input name="buyer_stock" type="number" min="0"></div></div>
      <div class="btns"><button class="p">Lanzar negociación</button></div><div class="err" id="err"></div></form></div>
      <div class="card"><h2>Lo que ofrecen tus proveedores</h2><p class="hint">Solo ves lo que cada proveedor decide enseñar.</p>
-     ${cat.length ? `<table><tr><th>Producto</th><th>Proveedor</th><th class="n">Lista</th><th class="n">Stock</th><th class="n">Plazo</th><th class="n">Coste</th></tr>${cat.map(p => `<tr><td>${h(p.name)}</td><td>${h(p.seller)}</td><td class="n">${eur(p.list_price)}</td><td class="n">${p.stock ?? '—'}</td><td class="n">${p.lead_days != null ? p.lead_days + ' d' : '—'}</td><td class="n">${p.cost != null ? eur(p.cost) : '—'}</td></tr>`).join('')}</table>` : '<p class="muted">Cuando un proveedor te pida conexión y la autorices, verás aquí su catálogo.</p>'}</div></div>
+     ${cat.length ? `<div class="mini">${cat.map(p => `<a class="mitem" href="#escaparate/${p.seller_id}"><div class="mimg">${p.photo ? `<img src="${h(p.photo)}" alt="" loading="lazy">` : ''}</div><div style="flex:1;min-width:0"><b>${h(p.name)}</b><div class="muted">${h(p.seller)}${p.lead_days != null ? ' · ' + p.lead_days + ' d' : ''}${p.stock != null ? ' · stock ' + p.stock : ''}${p.cost != null ? ' · coste ' + eur(p.cost) : ''}</div></div><span class="price">${eur(p.list_price)}</span></a>`).join('')}</div>
+     <p class="hint" style="margin-top:10px">Pulsa un artículo para ver el escaparate del proveedor: fotos, vídeo, certificados y proyectos.</p>` : '<p class="muted">Cuando un proveedor te pida conexión y la autorices, verás aquí su catálogo.</p>'}</div></div>
    <div class="card"><h2>Necesidades recientes</h2>${needs.length ? `<table><tr><th>Fecha</th><th>Producto</th><th class="n">Cant.</th><th class="n">Objetivo / máx.</th><th>Estado</th></tr>${needs.map(n => `<tr><td>${fdate(n.created)}</td><td>${h(n.product_name)}</td><td class="n">${n.qty}</td><td class="n">${eur(n.target_price)} / ${eur(n.max_price)}</td><td>${pill(n.status)}</td></tr>`).join('')}</table>` : '<p class="muted">Aún no has lanzado ninguna.</p>'}</div>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
@@ -191,23 +194,7 @@ async function viewComprar() {
   };
 }
 
-// ---------------- catálogo ----------------
-async function viewCatalogo() {
-  await shell('catalogo', '<div id="c"></div>');
-  const prods = await api('/products');
-  const row = (p = {}) => `<tr data-id="${p.id || ''}"><td><input name="sku" value="${h(p.sku)}" placeholder="Ref."></td><td><input name="name" value="${h(p.name)}" placeholder="Nombre del producto" required></td><td><input name="unit" value="${h(p.unit || 'ud')}" style="width:70px"></td>
-    <td><input name="list_price" type="number" step="0.01" value="${p.list_price ?? ''}"></td><td><input name="min_price" type="number" step="0.01" value="${p.min_price ?? ''}"></td><td><input name="cost" type="number" step="0.01" value="${p.cost ?? ''}"></td>
-    <td><input name="stock" type="number" value="${p.stock ?? ''}"></td><td><input name="lead_days" type="number" value="${p.lead_days ?? 3}"></td>
-    <td><button class="save">${p.id ? 'Guardar' : 'Añadir'}</button>${p.id ? ' <button class="danger del">Quitar</button>' : ''}</td></tr>`;
-  $('#c').innerHTML = `<h1>Catálogo</h1><p class="lead">Precios y límites por producto. El agente de ventas nunca baja del precio mínimo ni del coste más tu margen mínimo.</p>
-    <div class="card" style="overflow-x:auto"><table id="t"><tr><th>Ref.</th><th>Producto</th><th>Unidad</th><th>Lista €</th><th>Mínimo €</th><th>Coste €</th><th>Stock</th><th>Plazo (días)</th><th></th></tr>${prods.map(row).join('')}${row()}</table>
-    <p class="muted">El coste solo lo ve el cliente si activas "Enseñar costes" en tus reglas.</p></div>`;
-  document.querySelectorAll('#t tr[data-id]').forEach(tr => {
-    const data = () => Object.fromEntries([...tr.querySelectorAll('input')].map(i => [i.name, i.value]));
-    tr.querySelector('.save').onclick = async () => { try { await api('/products' + (tr.dataset.id ? '/' + tr.dataset.id : ''), { method: tr.dataset.id ? 'PUT' : 'POST', body: data() }); toast('Guardado'); render(); } catch (e) { toast(e.message); } };
-    const del = tr.querySelector('.del'); if (del) del.onclick = async () => { await api('/products/' + tr.dataset.id, { method: 'DELETE' }); render(); };
-  });
-}
+// catálogo, fichas, certificados, proyectos y escaparate: ver catalog.js
 
 // ---------------- conexiones ----------------
 async function viewConexiones() {
@@ -224,7 +211,7 @@ async function viewConexiones() {
     <div class="card"><h2>Mis clientes</h2>${asSeller.length ? `<table><tr><th>Cliente</th><th>Comparte</th><th>Estado</th><th></th></tr>${asSeller.map(c => `<tr><td>${clogo(c.other)}${h(c.other.name)}</td><td class="muted">${c.shared ? Object.entries(c.shared).filter(([, v]) => v).map(([k]) => SH[k]).join(', ') || 'nada' : '—'}</td><td>${pill(c.status)}</td><td>${c.status === 'activa' ? `<button data-k="${c.id}" data-s="pausada">Pausar</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="muted">Aún no tienes clientes conectados.</p>'}</div></div>` : ''}
   ${isBuyer() ? `<div class="card"><h2>Mis proveedores</h2><p class="hint">Tu código de empresa es <code class="k">${h(ME.company.code)}</code>. Dáselo a tus proveedores para que te pidan conexión.</p>
     ${asBuyer.length ? `<table><tr><th>Proveedor</th><th>Mensaje</th><th>Estado</th><th></th></tr>${asBuyer.map(c => `<tr><td>${clogo(c.other)}${h(c.other.name)}</td><td class="muted">${h(c.message || '')}</td><td>${pill(c.status)}</td><td style="white-space:nowrap">
-      ${c.status !== 'activa' ? `<button class="ok" data-k="${c.id}" data-s="activa">Autorizar</button> ` : ''}${c.status === 'pendiente' ? `<button data-k="${c.id}" data-s="rechazada">Rechazar</button>` : ''}${c.status === 'activa' ? `<button data-k="${c.id}" data-s="pausada">Pausar</button>` : ''}</td></tr>`).join('')}</table>
+      ${c.status !== 'activa' ? `<button class="ok" data-k="${c.id}" data-s="activa">Autorizar</button> ` : ''}${c.status === 'pendiente' ? `<button data-k="${c.id}" data-s="rechazada">Rechazar</button>` : ''}${c.status === 'activa' ? `<a class="btn" href="#escaparate/${c.other.id}">Ver escaparate</a> <button data-k="${c.id}" data-s="pausada">Pausar</button>` : ''}</td></tr>`).join('')}</table>
       <p class="muted">Lo que compartes con cada proveedor se configura en <a href="#politicas">Reglas de los agentes</a>.</p>` : '<p class="muted">Ningún proveedor te ha pedido conexión todavía.</p>'}</div>` : ''}`;
   const cp = $('#cp'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Enlace copiado'); } catch { $('#lnk').select(); } };
   const fc = $('#fc'); if (fc) fc.onsubmit = async e => { e.preventDefault(); try { await api('/connections', { body: Object.fromEntries(new FormData(e.target)) }); toast('Solicitud enviada'); render(); } catch (x) { $('#err').textContent = x.message; } };
@@ -402,7 +389,10 @@ async function render() {
   try {
     if (parts[0] === 'operacion') return await viewOperacion(+parts[1]);
     if (parts[0] === 'externo') return await viewExterno(+parts[1]);
-    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, catalogo: viewCatalogo, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
+    if (parts[0] === 'producto') return await viewProducto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
+    if (parts[0] === 'proyecto') return await viewProyecto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
+    if (parts[0] === 'escaparate') return await viewEscaparate(+parts[1]);
+    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, catalogo: viewCatalogo, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
     await (V[r] || viewInicio)();
   } catch (e) { const m = $('#main'); if (m) m.insertAdjacentHTML('afterbegin', `<div class="banner bad">${h(e.message)}</div>`); }
 }
