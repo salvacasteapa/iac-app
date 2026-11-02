@@ -261,3 +261,11 @@ h2.sec{font-size:20px;margin:8px 0 14px}
   .hnote{margin-left:0}
 }
 .head{margin-bottom:16px}
+
+/* ---------- autorizaciones especiales ---------- */
+.scopes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px}
+.scope{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:14px 16px;border-radius:14px;border:2px solid var(--line)}
+.scope span{font-weight:400;font-size:13px;color:var(--quiet)}
+.scope.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 6%,#fff)}
+.seg button:disabled{opacity:.4}
+@media (max-width:700px){ .scopes{grid-template-columns:1fr} }

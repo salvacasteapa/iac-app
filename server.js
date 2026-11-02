@@ -5,6 +5,7 @@ const path = require('path');
 const { one, all, run, now, getPolicy, setPolicy } = require('./db');
 const { negotiate, scoreOffers, approvals } = require('./negotiation');
 const codes = require('./codes');
+const specials = require('./specials');
 
 const PORT = +process.env.PORT || 8080;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -291,9 +292,12 @@ app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
   const offers = [];
   for (const p of candidates) {
     const sp = getPolicy(p.company_id, 'venta');
-    const r = negotiate({ product: p, need: sharedNeed, sellerPolicy: sp, buyerPolicy: bp, seller: { name: p.seller_name }, buyer: { name: buyer.name } });
+    const sa = specials.findAuth(p.company_id, buyer.id, p, need.qty);
+    const special = sa ? { ...specials.authPrices(sa, p), lead_days: sa.lead_days } : null;
+    const r = negotiate({ product: p, need: sharedNeed, sellerPolicy: sp, buyerPolicy: bp, seller: { name: p.seller_name }, buyer: { name: buyer.name }, special });
+    if (sa) r.log.unshift({ who: 'sys', text: specials.authText(sa, p) });
     const lk = codes.verifiedForProduct(buyer.id, p);
-    const base = { need_id: nid, seller_id: p.company_id, buyer_id: buyer.id, product_id: p.id, log: r.log, mfr_code: codes.norm(p.sku) || null, buyer_code: lk ? lk.buyer_code : null, link_id: lk ? lk.id : null };
+    const base = { need_id: nid, seller_id: p.company_id, buyer_id: buyer.id, product_id: p.id, log: r.log, mfr_code: codes.norm(p.sku) || null, buyer_code: lk ? lk.buyer_code : null, link_id: lk ? lk.id : null, auth: sa };
     if (r.status === 'acuerdo') {
       const pastOrders = one(`SELECT count(*) n FROM deals WHERE seller_id=? AND buyer_id=? AND status='cerrado'`, p.company_id, buyer.id).n;
       offers.push({ ...base, ...r, pastOrders, sp });
@@ -309,13 +313,15 @@ app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
   offers.forEach((o, i) => {
     const chosen = i === 0;
     const ap = chosen ? approvals(o, o.sp, bp) : { buyer: false, seller: false };
+    if (chosen && o.auth && o.auth.auto_close) ap.seller = false; // ya autorizado de antemano por el jefe de ventas
+    if (chosen && o.auth) run('UPDATE special_auths SET uses=uses+1 WHERE id=?', o.auth.id);
     const log = chosen ? [...o.log, { who: 'sys', text: offers.length > 1 ? `Elegida entre ${offers.length} ofertas (puntuación ${o.score}).` : 'Única oferta recibida.' }] : [...o.log, { who: 'sys', text: `Oferta no elegida (puntuación ${o.score}).` }];
     const status = !chosen ? 'descartada' : (ap.buyer || ap.seller) ? 'pendiente' : 'cerrado';
     if (status === 'pendiente') log.push({ who: 'sys', text: `Pendiente de aprobación: ${[ap.buyer && 'jefe de compras', ap.seller && 'jefe de ventas'].filter(Boolean).join(' y ')}.` });
     if (status === 'cerrado') log.push({ who: 'sys', text: 'Dentro de los límites de los dos gestores. Pedido cerrado automáticamente.' });
     if (o.link_id) log.unshift({ who: 'sys', text: `Artículo verificado por doble código: fabricante ${o.mfr_code} = cliente ${o.buyer_code} (confirmado por las dos empresas).` });
-    run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, price, qty, total, lead_days, partial, score, chosen, need_buyer_ok, need_seller_ok, buyer_ok, seller_ok, log, created, closed)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, nid, o.seller_id, o.buyer_id, o.product_id, o.mfr_code, o.buyer_code, o.link_id, status, o.price, o.qty, o.total, o.lead_days, o.partial ? 1 : 0, o.score, chosen ? 1 : 0,
+    run(`INSERT INTO deals (auth_id, need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, price, qty, total, lead_days, partial, score, chosen, need_buyer_ok, need_seller_ok, buyer_ok, seller_ok, log, created, closed)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.auth ? o.auth.id : null, nid, o.seller_id, o.buyer_id, o.product_id, o.mfr_code, o.buyer_code, o.link_id, status, o.price, o.qty, o.total, o.lead_days, o.partial ? 1 : 0, o.score, chosen ? 1 : 0,
       ap.buyer ? 1 : 0, ap.seller ? 1 : 0, ap.buyer ? 0 : 1, ap.seller ? 0 : 1, JSON.stringify(log), now(), status === 'cerrado' ? now() : null);
     if (status === 'cerrado') run('UPDATE products SET stock=max(0, stock-?) WHERE id=?', o.qty, o.product_id);
   });
@@ -336,7 +342,8 @@ function dealView(d, cid) {
     needOut = { product_name: need.product_name, qty: need.qty, max_days: need.max_days, consumption: c.consumo ? need.consumption : null, forecast: c.prevision ? need.forecast : null, buyer_stock: c.stock ? need.buyer_stock : null };
   }
   return {
-    id: d.id, status: d.status, motivo: d.motivo, mfr_code: d.mfr_code, buyer_code: d.buyer_code, verified: !!d.link_id, price: d.price, qty: d.qty, total: d.total, lead_days: d.lead_days, partial: !!d.partial, score: d.score, chosen: !!d.chosen,
+    id: d.id, status: d.status, motivo: d.motivo, mfr_code: d.mfr_code, buyer_code: d.buyer_code, verified: !!d.link_id,
+    special: d.auth_id ? (() => { const a = one('SELECT * FROM special_auths WHERE id=?', d.auth_id); const p = one('SELECT * FROM products WHERE id=?', d.product_id); return a && p ? { id: a.id, scope: a.scope, text: specials.authText(a, p), by: a.authorized_by } : null; })() : null, price: d.price, qty: d.qty, total: d.total, lead_days: d.lead_days, partial: !!d.partial, score: d.score, chosen: !!d.chosen,
     need_buyer_ok: !!d.need_buyer_ok, need_seller_ok: !!d.need_seller_ok, buyer_ok: !!d.buyer_ok, seller_ok: !!d.seller_ok,
     created: d.created, closed: d.closed, as: iAmSeller ? 'vendedor' : 'comprador',
     seller: publicCompany(seller), buyer: publicCompany(buyer), product, need: needOut,
@@ -460,6 +467,7 @@ app.get('/pedido/:id', (req, res, next) => {
   <tr><td><b>${e(v.mfr_code || v.product?.sku || '—')}</b></td><td><b>${e(v.buyer_code || '—')}</b></td><td>${e(v.product?.name)}${v.partial ? ' · entrega parcial' : ''}</td><td class="n">${v.qty} ${e(v.product?.unit)}</td><td class="n">${eur(v.price)}</td><td class="n">${eur(v.total)}</td></tr></table>
   <div class="tot">Total (sin impuestos): ${eur(v.total)}</div>
   <p>Plazo de entrega: ${v.lead_days} días.</p>
+  ${v.special ? `<p>Condiciones especiales: ${e(v.special.text)}</p>` : ''}
   ${v.verified ? '<p>✔ Artículo verificado por doble código, confirmado por proveedor y cliente.</p>' : ''}
   <p class="small">Pedido acordado entre los agentes de compras y ventas de ambas empresas, conforme a las políticas fijadas por sus responsables.</p>
   <button onclick="print()">Imprimir o guardar en PDF</button></body></html>`);
@@ -467,6 +475,7 @@ app.get('/pedido/:id', (req, res, next) => {
 
 // Catálogo enriquecido, certificados y proyectos
 codes.register(app, { auth, active, bad, str });
+specials.register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./agenda').register(app, { auth, active, bad, str, num });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
 

@@ -69,6 +69,7 @@ async function shell(active, content) {
     ['externos', 'Empresas sin agente', stats.externos],
     isBuyer() && ['comprar', 'Nueva compra', 0],
     isSeller() && ['catalogo', 'Catálogo', 0],
+    isSeller() && ['especiales', 'Autorizaciones especiales', 0],
     isSeller() && ['certificados', 'Certificados', 0],
     isSeller() && ['proyectos', 'Proyectos', 0],
     ['codigos', 'Códigos de artículo', stats.codigos],
@@ -145,6 +146,7 @@ async function viewOperacion(id) {
           <tr><td>Código del fabricante</td><td class="n"><code class="k">${h(d.mfr_code || d.product?.sku || '—')}</code></td></tr>
           <tr><td>Código del cliente</td><td class="n">${d.buyer_code ? `<code class="k">${h(d.buyer_code)}</code>` : '—'}</td></tr>
           <tr><td>Artículo</td><td class="n">${d.verified ? '<span class="pill ok">✔ Verificado por doble código</span>' : '<span class="pill mute">Por nombre, sin doble código</span>'}</td></tr>
+          ${d.special ? `<tr><td>Condiciones</td><td class="n"><span class="pill wait">Autorización especial nº ${d.special.id}</span><div class="muted" style="font-size:12.5px;margin-top:4px">${h(d.special.by)}</div></td></tr>` : ''}
           <tr><td>Cantidad</td><td class="n">${d.qty ?? '—'} ${h(d.product?.unit || '')}${d.partial ? ' (parcial)' : ''}</td></tr>
           <tr><td>Precio unitario</td><td class="n">${d.price != null ? eur(d.price) : '—'}</td></tr>
           <tr><td>Precio de lista</td><td class="n">${d.list_price != null ? eur(d.list_price) : '—'}</td></tr>
@@ -414,7 +416,7 @@ async function render() {
     if (parts[0] === 'proyecto') return await viewProyecto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
     if (parts[0] === 'cita') return await viewCita(parts[1] === 'nueva' ? 'nueva' : +parts[1]);
     if (parts[0] === 'escaparate') return await viewEscaparate(+parts[1]);
-    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, agenda: viewAgenda, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
+    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, agenda: viewAgenda, especiales: viewEspeciales, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
     await (V[r] || viewInicio)();
   } catch (e) { const m = $('#main'); if (m) m.insertAdjacentHTML('afterbegin', `<div class="banner bad">${h(e.message)}</div>`); }
 }

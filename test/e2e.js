@@ -121,5 +121,33 @@ const jar = () => { let c = ''; return async (p, body, method) => { const r = aw
   assert.match(ics, /BEGIN:VEVENT/); assert.match(ics, /DTSTART:20261110T100000/);
   const sg = await S('/agenda-sugerencias'); assert.ok(Array.isArray(sg));
   console.log('agenda OK:', sg.length, 'sugerencias;', sg.map(x => x.motive).join(', '));
+  // Autorizaciones especiales: pedido, familia y cliente
+  await assert.rejects(S('/specials', { scope: 'pedido', buyer_id: sMe.company.id + 1, price_mode: 'precio' }), /artículo/);
+  await assert.rejects(S('/specials', { scope: 'familia', category: 'Tornillería', price_mode: 'precio', price: 3 }), /descuento/);
+  const torP = await S('/products/' + tor.id);
+  await S('/products/' + tor.id, { ...torP, category: 'Tornillería', stock: 5000, lead_days: 5 }, 'PUT');
+  const bid = sMe.company.id + 1;
+  // Sin autorización: plazo 5 días no cabe en 3
+  await assert.rejects(B('/needs', { buyer_code: 'NOR-4471', qty: 50, target_price: 4, max_price: 5, max_days: 3 }).then(r => { if (r.status !== 'sin_acuerdo') throw 0; throw new Error('sin_acuerdo'); }), /sin_acuerdo/);
+  // Familia para todos: hasta -10%
+  const sf = await S('/specials', { scope: 'familia', category: 'tornillería', price_mode: 'descuento', discount_pct: 10, reason: 'Campaña' });
+  // Cliente: precio especial y plazo 2 días
+  const scl = await S('/specials', { scope: 'cliente', buyer_id: bid, product_id: tor.id, price_mode: 'precio', price: 4.9, lead_days: 2 });
+  // Pedido: un solo uso, 1000-2000 ud, precio 4,50
+  const sp1 = await S('/specials', { scope: 'pedido', buyer_id: bid, product_id: tor.id, price_mode: 'precio', price: 4.5, min_qty: 1000, max_qty: 2000, auto_close: true });
+  const q1 = await B('/needs', { buyer_code: 'NOR-4471', qty: 50, target_price: 4, max_price: 5, max_days: 3 });
+  const w1 = await B('/deals/' + (await B('/deals')).find(x => x.need?.id === q1.id && x.chosen).id);
+  assert.equal(w1.status, 'cerrado'); assert.equal(w1.special.id, scl.id); assert.equal(w1.lead_days, 2); assert.ok(w1.price >= 4.9);
+  const q2 = await B('/needs', { buyer_code: 'NOR-4471', qty: 1500, target_price: 4, max_price: 4.6, max_days: 5 });
+  const w2 = await B('/deals/' + (await B('/deals')).find(x => x.need?.id === q2.id && x.chosen).id);
+  assert.equal(w2.special.id, sp1.id); assert.equal(w2.need_seller_ok, false, 'pre-autorizado: ventas no tiene que aprobar'); assert.equal(w2.price, 4.5);
+  const q3 = await B('/needs', { buyer_code: 'NOR-4471', qty: 1500, target_price: 4, max_price: 4.6, max_days: 5 });
+  assert.equal(q3.status, 'sin_acuerdo', 'el pedido especial ya se usó');
+  const lst = await S('/specials'); assert.equal(lst.find(a => a.id === sp1.id).state, 'agotada');
+  await S(`/specials/${scl.id}/desactivar`, {});
+  const q4 = await B('/needs', { buyer_code: 'NOR-4471', qty: 10, target_price: 5.5, max_price: 6.2, max_days: 6 });
+  const w4 = await B('/deals/' + (await B('/deals')).find(x => x.need?.id === q4.id && x.chosen).id);
+  assert.equal(w4.special.id, sf.id);
+  console.log('autorizaciones OK:', w1.price, w2.price, w4.price);
   srv.close();
 })().catch(e => { console.error('FALLO', e); srv.close(); process.exit(1); });

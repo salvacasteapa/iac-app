@@ -11,16 +11,21 @@ const eur = n => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' 
  *  need: {qty, target_price, max_price, max_days, consumption, forecast}
  *  sellerPolicy, buyerPolicy, seller:{name}, buyer:{name}
  */
-function negotiate({ product, need, sellerPolicy, buyerPolicy, seller, buyer }) {
+function negotiate({ product, need, sellerPolicy, buyerPolicy, seller, buyer, special }) {
   const log = [];
   const say = (who, text) => log.push({ who, text });
   const sp = sellerPolicy, bp = buyerPolicy;
 
   // Precio suelo del vendedor: el mínimo fijado o el coste + margen mínimo, lo que sea mayor.
   const costFloor = product.cost > 0 ? product.cost * (1 + (sp.margen_min_pct || 0) / 100) : 0;
-  const floor = r2(Math.max(product.min_price, costFloor));
-  const list = product.list_price;
-  const openBook = !!sp.mostrar.costes && product.cost > 0;
+  // Una autorización especial del jefe de ventas sustituye al suelo, al precio de salida y al plazo.
+  // Precio especial: es el precio autorizado para ese cliente, ni más ni menos.
+  // Descuento máximo: amplía el margen, pero nunca deja al agente peor que sus reglas normales.
+  const normalFloor = r2(Math.max(product.min_price, costFloor));
+  const floor = !special ? normalFloor : special.fixed ? special.floor : Math.min(normalFloor, special.floor);
+  const list = special ? special.open : product.list_price;
+  const openBook = !special && !!sp.mostrar.costes && product.cost > 0;
+  if (special && special.lead_days != null) product = { ...product, lead_days: Math.min(product.lead_days, special.lead_days) };
 
   let qty = need.qty, partial = false;
   say('buy', `Necesitamos ${qty} ${product.unit || 'ud'} de ${product.name}, con entrega en ${need.max_days} días como máximo.`);
@@ -64,6 +69,7 @@ function negotiate({ product, need, sellerPolicy, buyerPolicy, seller, buyer }) 
     b = Math.max(b, Math.min(need.max_price, costFloor));
     say('sell', `Trabajamos a libro abierto: nuestro coste es ${eur(product.cost)} y aplicamos un margen mínimo del ${sp.margen_min_pct}%.`);
   }
+  if (special) say('sell', `Para vosotros tenemos condiciones especiales autorizadas por nuestra dirección.`);
   say('sell', `Nuestra oferta: ${eur(s)} por ${product.unit || 'ud'}, entrega en ${product.lead_days} días.`);
 
   let price = null;
@@ -86,7 +92,7 @@ function negotiate({ product, need, sellerPolicy, buyerPolicy, seller, buyer }) 
   const total = r2(price * qty);
   say('buy', `De acuerdo: ${qty} a ${eur(price)}. Total ${eur(total)}.`);
 
-  const discountPct = r2((1 - price / list) * 100);
+  const discountPct = r2((1 - price / product.list_price) * 100);
   return { status: 'acuerdo', price, qty, total, partial, lead_days: product.lead_days, discountPct, log };
 }
 
