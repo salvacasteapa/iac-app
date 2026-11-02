@@ -291,3 +291,6 @@ h2.sec{font-size:20px;margin:8px 0 14px}
 @keyframes popin{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
 table.rules td{vertical-align:middle}
 .inl{display:flex;align-items:center;gap:6px}.inl span{color:var(--quiet);font-size:13px}.inl select{min-width:110px}
+.note{border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:14px;border:1px solid var(--line,#dde1e7);background:#f6f8fb}
+.note.ok{background:#eefaf3;border-color:#bfe8cf;color:#14532d}.note.warn{background:#fff7e8;border-color:#f4d79a;color:#7a4b00}
+.kpi .v small{font-size:13px;font-weight:500}

@@ -29,11 +29,14 @@ async function viewAuth(mode) {
   document.documentElement.style.setProperty('--brand', '#1f4fd1');
   const qs = new URLSearchParams(location.search);
   const invite = qs.get('invita') || route().q.get('invita');
-  let inv = null; if (invite) inv = await api('/invite/' + encodeURIComponent(invite)).catch(() => null);
+  const lado = qs.get('lado') || route().q.get('lado') || '';
+  let inv = null; if (invite) inv = await api('/invite/' + encodeURIComponent(invite) + (lado ? '?lado=' + encodeURIComponent(lado) : '')).catch(() => null);
+  const invBuyer = inv?.kind === 'comprador';
   if (inv) document.documentElement.style.setProperty('--brand', inv.color || '#1f4fd1');
   const side = inv
     ? `<div class="inv">${inv.logo ? `<img src="${h(inv.logo)}" alt="">` : h(inv.name)}</div>
-       <div><h2>${h(inv.name)} te invita a <em>conectar tus compras.</em></h2><p>Recibirás sus ofertas de reposición dentro de los límites que tú marques. Tú decides qué datos compartes y puedes pausar la conexión cuando quieras.</p></div>`
+       ${invBuyer ? `<div><h2>${h(inv.name)} te invita a <em>ser su proveedor.</em></h2><p>Su asistente de compras te enviará sus pedidos recurrentes y tu asistente de ventas negociará dentro de tus reglas. ${h(inv.name)} puede pagar tu conexión, así que puedes venderle sin contratar el plan Ventas.</p></div>`
+       : `<div><h2>${h(inv.name)} te invita a <em>conectar tus compras.</em></h2><p>Recibirás sus ofertas de reposición dentro de los límites que tú marques. Tú decides qué datos compartes y puedes pausar la conexión cuando quieras.</p>${inv.promo ? `<ul><li>Plan Compras gratis durante ${inv.promo} meses, por invitación de ${h(inv.name)}</li></ul>` : ''}</div>`}`
     : `<div><h2>Tus pedidos de siempre, <em>negociados solos.</em></h2><p>Tus agentes de compras y ventas cierran los pedidos recurrentes dentro de tus reglas y te consultan solo cuando algo se sale de ellas.</p>
        <ul><li>Con tu logo y tus colores</li><li>Tú decides qué se comparte</li><li>14 días de prueba gratis</li></ul></div>`;
   $('#app').innerHTML = `<div class="auth"><div class="side"><a class="lg" href="/"><span class="mk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h12l-3-3M20 16H8l3 3"/></svg></span>IAC</a>${side}<span style="color:#8a96b4;font-size:13px">Compras y ventas recurrentes entre empresas</span></div>
@@ -42,17 +45,17 @@ async function viewAuth(mode) {
     <div class="seg"><button data-m="login" class="${mode === 'login' ? 'on' : ''}">Entrar</button><button data-m="registro" class="${mode === 'registro' ? 'on' : ''}">Crear cuenta</button></div>
     <form id="f">
       ${mode === 'registro' ? `<label>Nombre de la empresa</label><input name="company" required>
-        <label>Tu empresa…</label><select name="role"><option value="comprador" ${inv ? 'selected' : ''}>Compra a proveedores</option><option value="vendedor" ${inv ? '' : 'selected'}>Vende a clientes</option><option value="ambos">Compra y vende</option></select>
+        <label>Tu empresa…</label><select name="role"><option value="comprador" ${inv && !invBuyer ? 'selected' : ''}>Compra a proveedores</option><option value="vendedor" ${!inv || invBuyer ? 'selected' : ''}>Vende a clientes</option><option value="ambos">Compra y vende</option></select>
         <label>Tu nombre</label><input name="name" required>` : ''}
       <label>Email</label><input name="email" type="email" required autocomplete="email">
       <label>Contraseña</label><input name="password" type="password" required minlength="8" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}">
       <div class="btns"><button class="p big">${mode === 'login' ? 'Entrar' : 'Crear cuenta y empezar gratis'}</button></div>
       <div class="err" id="err"></div>
     </form></div></div></div>`;
-  document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { location.hash = '#' + b.dataset.m + (invite ? '?invita=' + encodeURIComponent(invite) : ''); });
+  document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { location.hash = '#' + b.dataset.m + (invite ? '?invita=' + encodeURIComponent(invite) + (lado ? '&lado=' + encodeURIComponent(lado) : '') : ''); });
   $('#f').onsubmit = async e => {
     e.preventDefault();
-    const body = Object.fromEntries(new FormData(e.target)); if (invite) body.invite = invite;
+    const body = Object.fromEntries(new FormData(e.target)); if (invite) { body.invite = invite; body.lado = lado; }
     try { await api(mode === 'login' ? '/login' : '/signup', { body }); ME = null; location.hash = '#inicio'; render(); }
     catch (x) { $('#err').textContent = x.message; }
   };
@@ -220,23 +223,42 @@ async function viewComprar() {
 // ---------------- conexiones ----------------
 async function viewConexiones() {
   await shell('conexiones', '<div id="c"></div>');
+  ME = await api('/me');
   const conns = await api('/connections');
   const asSeller = conns.filter(c => c.as === 'vendedor'), asBuyer = conns.filter(c => c.as === 'comprador');
   const link = `${location.origin}/app?invita=${encodeURIComponent(ME.company.code)}#registro`;
+  const linkProv = `${location.origin}/app?invita=${encodeURIComponent(ME.company.code)}&lado=compra#registro`;
   const SH = { consumo: 'consumo', prevision: 'previsión', stock: 'stock' };
+  const U = ME.usage, P = U.promo, CX = ME.conexion.price;
+  if (route().q.get('ok')) toast('Pago recibido. La conexión quedará pagada en unos segundos.');
+  const usage = `<div class="kpis" style="margin-bottom:16px"><div class="kpi"><div class="v">${U.conexiones}${U.max ? ` <small class="muted">de ${U.max}</small>` : ''}</div><div class="l">Conexiones${U.max ? ' de tu plan' : ' (sin tope)'}</div></div>
+    ${P ? `<div class="kpi"><div class="v">${P.used} <small class="muted">de ${P.max}</small></div><div class="l">Clientes invitados con ${P.months} meses gratis</div></div>` : ''}</div>
+    ${U.max && U.conexiones >= U.max ? `<div class="note warn">Has llegado al máximo de ${U.max} conexiones. <a href="#membresia">Pasa al plan Compras + Ventas</a>, que no tiene tope de conexiones.</div>` : ''}`;
+  const sellerBtns = c => c.status === 'activa' ? `<button data-k="${c.id}" data-s="pausada">Pausar</button>`
+    : c.status === 'pendiente' && c.requested_by === 'comprador' ? `<button class="ok" data-k="${c.id}" data-s="activa">Aceptar</button> <button data-k="${c.id}" data-s="rechazada">Rechazar</button>` : '';
+  const pay = c => c.status !== 'activa' ? '' : c.sponsor_until ? `<span class="pill ok">Pagas su conexión hasta el ${fdate(c.sponsor_until)}</span> ${ME.user.is_admin ? `<button data-unpay="${c.id}">Dejar de pagar</button>` : ''}`
+    : !c.seller_plan ? `<span class="pill wait">Sin plan Ventas</span> ${ME.user.is_admin ? `<button class="p" data-pay="${c.id}">Pagar su conexión · ${CX} €/mes</button>` : ''}` : '';
+  const buyerBtns = c => c.status === 'pendiente' && c.requested_by === 'comprador' ? '<span class="muted">Esperando al proveedor</span>'
+    : `${c.status !== 'activa' ? `<button class="ok" data-k="${c.id}" data-s="activa">Autorizar</button> ` : ''}${c.status === 'pendiente' ? `<button data-k="${c.id}" data-s="rechazada">Rechazar</button>` : ''}${c.status === 'activa' ? `<a class="btn" href="#escaparate/${c.other.id}">Ver escaparate</a> <button data-k="${c.id}" data-s="pausada">Pausar</button>` : ''}`;
   $('#c').innerHTML = `<h1>Conexiones</h1><p class="lead">Una conexión es el permiso de un cliente para que el agente de ventas de su proveedor negocie con su agente de compras.</p>
-  ${isSeller() ? `<div class="grid"><div class="card"><h2>Invitar a un cliente</h2><p class="hint">Envía este enlace a tu cliente. Al crear su cuenta, recibirá tu solicitud de conexión.</p>
-      <input readonly value="${h(link)}" id="lnk"><div class="btns"><button id="cp">Copiar enlace</button></div>
-      <h3>¿Tu cliente ya usa IAC?</h3><form id="fc"><label>Código de empresa del cliente</label><input name="code" placeholder="Ej.: NORTE-1A2B" required><label>Mensaje para el jefe de compras</label><textarea name="message">Con la conexión, nuestro agente te enviará ofertas de reposición dentro de tus límites. Puedes pausarla cuando quieras.</textarea>
-      <div class="btns"><button class="p">Pedir conexión</button></div><div class="err" id="err"></div></form></div>
-    <div class="card"><h2>Mis clientes</h2>${asSeller.length ? `<table><tr><th>Cliente</th><th>Comparte</th><th>Estado</th><th></th></tr>${asSeller.map(c => `<tr><td>${clogo(c.other)}${h(c.other.name)}</td><td class="muted">${c.shared ? Object.entries(c.shared).filter(([, v]) => v).map(([k]) => SH[k]).join(', ') || 'nada' : '—'}</td><td>${pill(c.status)}</td><td>${c.status === 'activa' ? `<button data-k="${c.id}" data-s="pausada">Pausar</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="muted">Aún no tienes clientes conectados.</p>'}</div></div>` : ''}
-  ${isBuyer() ? `<div class="card"><h2>Mis proveedores</h2><p class="hint">Tu código de empresa es <code class="k">${h(ME.company.code)}</code>. Dáselo a tus proveedores para que te pidan conexión.</p>
-    ${asBuyer.length ? `<table><tr><th>Proveedor</th><th>Mensaje</th><th>Estado</th><th></th></tr>${asBuyer.map(c => `<tr><td>${clogo(c.other)}${h(c.other.name)}</td><td class="muted">${h(c.message || '')}</td><td>${pill(c.status)}</td><td style="white-space:nowrap">
-      ${c.status !== 'activa' ? `<button class="ok" data-k="${c.id}" data-s="activa">Autorizar</button> ` : ''}${c.status === 'pendiente' ? `<button data-k="${c.id}" data-s="rechazada">Rechazar</button>` : ''}${c.status === 'activa' ? `<a class="btn" href="#escaparate/${c.other.id}">Ver escaparate</a> <button data-k="${c.id}" data-s="pausada">Pausar</button>` : ''}</td></tr>`).join('')}</table>
-      <p class="muted">Lo que compartes con cada proveedor se configura en <a href="#politicas">Reglas de los agentes</a>.</p>` : '<p class="muted">Ningún proveedor te ha pedido conexión todavía.</p>'}</div>` : ''}`;
-  const cp = $('#cp'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Enlace copiado'); } catch { $('#lnk').select(); } };
-  const fc = $('#fc'); if (fc) fc.onsubmit = async e => { e.preventDefault(); try { await api('/connections', { body: Object.fromEntries(new FormData(e.target)) }); toast('Solicitud enviada'); render(); } catch (x) { $('#err').textContent = x.message; } };
+  ${usage}
+  ${isSeller() ? `<div class="grid"><div class="card"><h2>Invitar a un cliente</h2><p class="hint">Envía este enlace a tu cliente. Al crear su cuenta, recibirá tu solicitud de conexión.${P && ME.company.active && P.used < P.max ? ` <b>Promoción:</b> tu cliente tendrá el plan Compras gratis durante ${P.months} meses (te quedan ${P.max - P.used}).` : ''}</p>
+      <input readonly value="${h(link)}" id="lnk"><div class="btns"><button data-copy="lnk">Copiar enlace</button></div>
+      <h3>¿Tu cliente ya usa IAC?</h3><form id="fc"><input type="hidden" name="as" value="vendedor"><label>Código de empresa del cliente</label><input name="code" placeholder="Ej.: NORTE-1A2B" required><label>Mensaje para el jefe de compras</label><textarea name="message">Con la conexión, nuestro agente te enviará ofertas de reposición dentro de tus límites. Puedes pausarla cuando quieras.</textarea>
+      <div class="btns"><button class="p">Pedir conexión</button></div><div class="err"></div></form></div>
+    <div class="card"><h2>Mis clientes</h2>${asSeller.length ? `<table><tr><th>Cliente</th><th>Comparte</th><th>Estado</th><th></th></tr>${asSeller.map(c => `<tr><td>${clogo(c.other)}${h(c.other.name)}${c.sponsor_until ? '<br><small class="muted">Este cliente paga tu conexión</small>' : ''}${c.status === 'pendiente' && c.requested_by === 'comprador' ? `<br><small class="muted">${h(c.message || 'Te pide conexión')}</small>` : ''}</td><td class="muted">${c.shared ? Object.entries(c.shared).filter(([, v]) => v).map(([k]) => SH[k]).join(', ') || 'nada' : '—'}</td><td>${pill(c.status)}</td><td style="white-space:nowrap">${sellerBtns(c)}</td></tr>`).join('')}</table>` : '<p class="muted">Aún no tienes clientes conectados.</p>'}</div></div>` : ''}
+  ${isBuyer() ? `<div class="grid"><div class="card"><h2>Invitar a un proveedor</h2><p class="hint">Tu código de empresa es <code class="k">${h(ME.company.code)}</code>. Envía este enlace a un proveedor. Si no tiene plan Ventas, puedes pagar tú su conexión por ${CX} € al mes y venderá solo contigo.</p>
+      <input readonly value="${h(linkProv)}" id="lnkp"><div class="btns"><button data-copy="lnkp">Copiar enlace</button></div>
+      <h3>¿Tu proveedor ya usa IAC?</h3><form id="fp"><input type="hidden" name="as" value="comprador"><label>Código de empresa del proveedor</label><input name="code" placeholder="Ej.: TORNI-9F3C" required><label>Mensaje para el proveedor</label><textarea name="message">Queremos que tu asistente de ventas negocie nuestros pedidos recurrentes dentro de nuestras reglas.</textarea>
+      <div class="btns"><button class="p">Pedir conexión</button></div><div class="err"></div></form></div>
+    <div class="card"><h2>Mis proveedores</h2>
+    ${asBuyer.length ? `<table><tr><th>Proveedor</th><th>Mensaje</th><th>Estado</th><th></th></tr>${asBuyer.map(c => `<tr><td>${clogo(c.other)}${h(c.other.name)}<div style="margin-top:4px">${pay(c)}</div></td><td class="muted">${h(c.message || '')}</td><td>${pill(c.status)}</td><td style="white-space:nowrap">${buyerBtns(c)}</td></tr>`).join('')}</table>
+      <p class="muted">Lo que compartes con cada proveedor se configura en <a href="#politicas">Reglas de los agentes</a>.</p>` : '<p class="muted">Aún no tienes proveedores conectados.</p>'}</div></div>` : ''}`;
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { const i = $('#' + b.dataset.copy); try { await navigator.clipboard.writeText(i.value); toast('Enlace copiado'); } catch { i.select(); } });
+  document.querySelectorAll('#fc,#fp').forEach(f => f.onsubmit = async e => { e.preventDefault(); try { await api('/connections', { body: Object.fromEntries(new FormData(f)) }); toast('Solicitud enviada'); render(); } catch (x) { f.querySelector('.err').textContent = x.message; } });
   document.querySelectorAll('[data-k]').forEach(b => b.onclick = async () => { try { await api(`/connections/${b.dataset.k}/status`, { body: { status: b.dataset.s } }); render(); } catch (e) { toast(e.message); } });
+  document.querySelectorAll('[data-pay]').forEach(b => b.onclick = async () => { b.disabled = true; try { const r = await api('/billing/connection/' + b.dataset.pay, { body: {} }); if (r.url) location.href = r.url; else { toast('Conexión pagada'); render(); } } catch (e) { toast(e.message); b.disabled = false; } });
+  document.querySelectorAll('[data-unpay]').forEach(b => b.onclick = async () => { if (!confirm('¿Dejar de pagar la conexión de este proveedor? Si no tiene plan Ventas, su asistente dejará de negociar contigo.')) return; try { await api('/billing/connection/' + b.dataset.unpay, { method: 'DELETE' }); render(); } catch (e) { toast(e.message); } });
 }
 
 // ---------------- reglas de los agentes ----------------
@@ -312,9 +334,17 @@ async function viewEmpresa() {
 async function viewMembresia() {
   await shell('membresia', '<div id="c"></div>');
   const c = ME.company, plans = ME.plans;
-  const FEAT = { comprador: ['Agente de compras', 'Conexión con todos tus proveedores', 'Reglas de cierre y aprobaciones', 'Pedidos con tu membrete'], vendedor: ['Agente de ventas', 'Clientes conectados ilimitados', 'Catálogo con precios mínimos y costes', 'Pedidos con tu membrete'], empresa: ['Agente de compras y agente de ventas', 'Todo lo de los planes Compras y Ventas', 'Varios usuarios por empresa'] };
+  const U = ME.usage, P = U.promo, MX = plans.comprador.max_conn;
+  const FEAT = { comprador: ['Agente de compras', `Hasta ${MX} conexiones con proveedores`, 'Reglas de cierre y aprobaciones', 'Pedidos con tu membrete', `Paga la conexión de un proveedor sin plan por ${ME.conexion.price} €/mes`],
+    vendedor: ['Agente de ventas', `Hasta ${MX} conexiones con clientes`, 'Catálogo con precios mínimos y costes', 'Pedidos con tu membrete', `Promoción: regala ${P?.months || 6} meses del plan Compras a ${P?.max || 50} clientes`],
+    empresa: ['Agente de compras y agente de ventas', 'Sin tope de conexiones', `${(plans.empresa.max_neg || 1000).toLocaleString('es-ES')} negociaciones al mes incluidas`, `A partir de ahí, ${String(plans.empresa.extra_neg ?? 0.99).replace('.', ',')} € por negociación`, 'Varios usuarios por empresa'] };
+  const N = U.negociaciones;
   if (route().q.get('ok')) toast('Pago recibido. Tu membresía se activará en unos segundos.');
-  $('#c').innerHTML = `<h1>Membresía</h1><p class="lead">Estado: ${pill(c.plan_status)} ${c.plan_until ? `hasta el ${fdate(c.plan_until)}` : ''}</p>
+  $('#c').innerHTML = `<h1>Membresía</h1><p class="lead">Estado: ${pill(c.plan_status)} ${c.plan_until ? `hasta el ${fdate(c.plan_until)}` : ''}${plans[c.plan] ? ` · Plan ${h(plans[c.plan].name)}` : ''}</p>
+   ${c.promo_by && c.active ? `<div class="note ok">Tienes el plan Compras gratis hasta el ${fdate(c.plan_until)} por invitación de ${h(c.promo_by)}. No tienes que pagar nada hasta entonces.</div>` : ''}
+   ${c.sponsored ? '<div class="note ok">No tienes plan Ventas, pero un cliente paga tu conexión: tu asistente puede negociar con ese cliente.</div>' : ''}
+   <div class="kpis" style="margin-bottom:16px"><div class="kpi"><div class="v">${U.conexiones}${U.max ? ` <small class="muted">de ${U.max}</small>` : ''}</div><div class="l">Conexiones${U.max ? '' : ' (sin tope)'}</div></div>
+     <div class="kpi"><div class="v">${N.used.toLocaleString('es-ES')}${N.included ? ` <small class="muted">de ${N.included.toLocaleString('es-ES')}</small>` : ''}</div><div class="l">Negociaciones este mes${N.extra ? ` · ${N.extra} extra = ${eur(N.extra_eur)}` : ''}</div></div>${P ? `<div class="kpi"><div class="v">${P.used} <small class="muted">de ${P.max}</small></div><div class="l">Clientes con ${P.months} meses gratis</div></div>` : ''}</div>
    <div class="plans">${Object.entries(plans).filter(([, p]) => p.roles.includes(c.role)).map(([k, p]) => `<div class="plan ${c.plan === k && c.plan_status === 'active' ? 'cur' : ''}"><h2>${h(p.name)}</h2><div class="pr">${eur(p.price).replace(',00', '')}<span class="muted"> /mes</span></div><ul>${FEAT[k].map(f => `<li>${f}</li>`).join('')}</ul>
      ${ME.user.is_admin ? `<button class="p" data-plan="${k}">${c.plan === k && c.plan_status === 'active' ? 'Renovar' : 'Elegir este plan'}</button>` : ''}</div>`).join('')}</div>
    ${!ME.features.stripe ? '<p class="muted" style="margin-top:14px">Modo demostración: el pago no está conectado, al elegir un plan se activa 30 días sin cobro.</p>' : '<p class="muted" style="margin-top:14px">Pago seguro con tarjeta. Puedes cancelar cuando quieras.</p>'}`;
@@ -325,11 +355,13 @@ async function viewMembresia() {
 async function viewAdmin() {
   await shell('admin', '<div id="c"></div>');
   const cs = await api('/admin/companies');
-  const mrr = cs.filter(c => c.plan_status === 'active').reduce((a, c) => a + (ME.plans[c.plan]?.price || 0), 0);
+  const mrr = cs.filter(c => c.plan_status === 'active' && !(c.promo_by && c.plan_until - c.created <= 181 * 864e5)).reduce((a, c) => a + (ME.plans[c.plan]?.price || 0) + (c.neg?.extra_eur || 0) + c.sponsoring * ME.conexion.price, 0);
   $('#c').innerHTML = `<h1>Administración IAC</h1><p class="lead">Todas las empresas de la plataforma.</p>
    <div class="kpis"><div class="kpi"><div class="v">${cs.length}</div><div class="l">Empresas</div></div><div class="kpi"><div class="v">${cs.filter(c => c.plan_status === 'active').length}</div><div class="l">Membresías activas</div></div><div class="kpi"><div class="v">${eur(mrr)}</div><div class="l">Ingreso mensual recurrente</div></div><div class="kpi"><div class="v">${cs.reduce((a, c) => a + c.orders, 0) / 2 | 0}</div><div class="l">Pedidos cerrados (aprox.)</div></div></div>
-   <div class="card" style="overflow-x:auto"><table><tr><th>Empresa</th><th>Código</th><th>Tipo</th><th>Plan</th><th>Estado</th><th>Hasta</th><th class="n">Usuarios</th><th class="n">Pedidos</th><th>WhatsApp (extra)</th><th></th></tr>
-   ${cs.map(c => `<tr><td>${h(c.name)}</td><td><code class="k">${h(c.code)}</code></td><td>${h(c.role)}</td><td>${h(ME.plans[c.plan]?.name || '—')}</td><td>${pill(c.plan_status)}</td><td>${fdate(c.plan_until)}</td><td class="n">${c.users}</td><td class="n">${c.orders}</td>
+   <div class="card" style="overflow-x:auto"><table><tr><th>Empresa</th><th>Código</th><th>Tipo</th><th>Plan</th><th>Estado</th><th>Hasta</th><th class="n">Usuarios</th><th class="n">Pedidos</th><th class="n">Conexiones</th><th>Negociaciones mes</th><th>Promoción</th><th>WhatsApp (extra)</th><th></th></tr>
+   ${cs.map(c => `<tr><td>${h(c.name)}</td><td><code class="k">${h(c.code)}</code></td><td>${h(c.role)}</td><td>${h(ME.plans[c.plan]?.name || '—')}</td><td>${pill(c.plan_status)}</td><td>${fdate(c.plan_until)}</td><td class="n">${c.users}</td><td class="n">${c.orders}</td><td class="n">${c.conns}${c.sponsoring ? ` <small class="muted">· paga ${c.sponsoring}</small>` : ''}</td>
+     <td style="white-space:nowrap">${c.neg.used}${c.neg.included ? ` / ${c.neg.included}` : ''}${c.neg.extra ? ` <b>+${eur(c.neg.extra_eur)}</b>` : ''}</td>
+     <td class="muted" style="white-space:nowrap">${c.promo_by ? 'Invitado por ' + h(c.promo_by) : c.promo_given ? `Regala ${c.promo_given}` : '—'}</td>
      <td style="white-space:nowrap"><label class="chk" style="margin:0"><input type="checkbox" data-wa="${c.id}" ${c.wa_enabled ? 'checked' : ''}><span>${c.wa_month} este mes</span></label></td>
      <td style="white-space:nowrap"><button data-c="${c.id}" data-s="active">+30 días</button> <button class="danger" data-c="${c.id}" data-s="cancelado">Suspender</button></td></tr>`).join('')}</table></div>`;
   document.querySelectorAll('[data-wa]').forEach(i => i.onchange = async () => { await api('/admin/companies/' + i.dataset.wa, { body: { wa_enabled: i.checked } }); toast(i.checked ? 'WhatsApp activado' : 'WhatsApp desactivado'); });

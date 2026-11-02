@@ -7,6 +7,15 @@ const { negotiate, scoreOffers, approvals } = require('./negotiation');
 const codes = require('./codes');
 const specials = require('./specials');
 const followup = require('./followup');
+// Columnas de membresía añadidas después: promoción y conexiones pagadas por el cliente
+{
+  const cols = t => all(`PRAGMA table_info(${t})`).map(c => c.name);
+  const k = cols('connections'), c = cols('companies');
+  if (!k.includes('requested_by')) run(`ALTER TABLE connections ADD COLUMN requested_by TEXT DEFAULT 'vendedor'`);
+  if (!k.includes('sponsor_until')) run('ALTER TABLE connections ADD COLUMN sponsor_until INTEGER');
+  if (!k.includes('sponsor_sub')) run('ALTER TABLE connections ADD COLUMN sponsor_sub TEXT');
+  if (!c.includes('promo_by')) run('ALTER TABLE companies ADD COLUMN promo_by INTEGER');
+}
 
 const PORT = +process.env.PORT || 8080;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -14,11 +23,17 @@ const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
 const TRIAL_DAYS = +process.env.TRIAL_DAYS || 14;
 const DAY = 864e5;
 
+const MAX_CONN = +process.env.MAX_CONEXIONES || 100;
 const PLANS = {
-  comprador: { name: 'Compras', price: +process.env.PRICE_COMPRADOR || 29, stripe: process.env.STRIPE_PRICE_COMPRADOR, roles: ['comprador'] },
-  vendedor: { name: 'Ventas', price: +process.env.PRICE_VENDEDOR || 99, stripe: process.env.STRIPE_PRICE_VENDEDOR, roles: ['vendedor'] },
-  empresa: { name: 'Compras + Ventas', price: +process.env.PRICE_EMPRESA || 149, stripe: process.env.STRIPE_PRICE_EMPRESA, roles: ['comprador', 'vendedor', 'ambos'] }
+  comprador: { name: 'Compras', price: +process.env.PRICE_COMPRADOR || 19, stripe: process.env.STRIPE_PRICE_COMPRADOR, roles: ['comprador'], max_conn: MAX_CONN },
+  vendedor: { name: 'Ventas', price: +process.env.PRICE_VENDEDOR || 49, stripe: process.env.STRIPE_PRICE_VENDEDOR, roles: ['vendedor'], max_conn: MAX_CONN },
+  empresa: { name: 'Compras + Ventas', price: +process.env.PRICE_EMPRESA || 199, stripe: process.env.STRIPE_PRICE_EMPRESA, roles: ['comprador', 'vendedor', 'ambos'], max_conn: null,
+    max_neg: +process.env.NEGOCIACIONES_INCLUIDAS || 1000, extra_neg: +process.env.PRECIO_NEGOCIACION_EXTRA || 0.99 }
 };
+// El cliente paga la conexión de un proveedor que no tiene plan Ventas
+const CONEXION = { name: 'Conexión pagada por el cliente', price: +process.env.PRICE_CONEXION || 14, stripe: process.env.STRIPE_PRICE_CONEXION };
+// Promoción del plan Ventas: cada proveedor puede regalar 6 meses del plan Compras a 50 clientes
+const PROMO = { max: +process.env.PROMO_CLIENTES || 50, days: +process.env.PROMO_DIAS || 180 };
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const AGENT_KEY = process.env.ANTHROPIC_API_KEY;
@@ -38,12 +53,21 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), (req, res
   if (!ok || Math.abs(Date.now() / 1000 - +parts.t) > 600) return res.status(400).send('firma no válida');
   const ev = JSON.parse(req.body);
   const o = ev.data.object;
-  if (ev.type === 'checkout.session.completed') {
+  const subId = ev.type === 'customer.subscription.deleted' ? o.id : o.subscription;
+  const sponsored = subId && one('SELECT * FROM connections WHERE sponsor_sub=?', subId);
+  if (ev.type === 'checkout.session.completed' && o.metadata?.kind === 'conexion') {
+    run('UPDATE connections SET sponsor_until=?, sponsor_sub=? WHERE id=? AND buyer_id=?', now() + 32 * DAY, o.subscription || null, +o.metadata.connection_id, +o.client_reference_id);
+  } else if (sponsored) {
+    // Cobros de una conexión pagada por el cliente
+    if (ev.type === 'invoice.paid') run('UPDATE connections SET sponsor_until=? WHERE id=?', now() + 32 * DAY, sponsored.id);
+    else if (ev.type === 'customer.subscription.deleted' || ev.type === 'invoice.payment_failed') run('UPDATE connections SET sponsor_until=NULL, sponsor_sub=NULL WHERE id=?', sponsored.id);
+  } else if (ev.type === 'checkout.session.completed') {
     const cid = +o.client_reference_id;
     run('UPDATE companies SET plan=?, plan_status=?, plan_until=?, stripe_customer=?, stripe_subscription=? WHERE id=?',
       o.metadata?.plan || null, 'active', now() + 32 * DAY, o.customer || null, o.subscription || null, cid);
+    if (o.metadata?.plan === 'empresa') run(`UPDATE companies SET role='ambos' WHERE id=?`, cid);
   } else if (ev.type === 'invoice.paid') {
-    run('UPDATE companies SET plan_status=?, plan_until=? WHERE stripe_customer=?', 'active', now() + 32 * DAY, o.customer);
+    run('UPDATE companies SET plan_status=?, plan_until=max(coalesce(plan_until,0),?) WHERE stripe_customer=?', 'active', now() + 32 * DAY, o.customer);
   } else if (ev.type === 'customer.subscription.deleted' || ev.type === 'invoice.payment_failed') {
     run('UPDATE companies SET plan_status=? WHERE stripe_customer=?', ev.type === 'invoice.payment_failed' ? 'impagado' : 'cancelado', o.customer);
   }
@@ -62,6 +86,20 @@ const num = (v, min = 0) => { const n = Number(v); return Number.isFinite(n) && 
 const isActive = c => ['trial', 'active'].includes(c.plan_status) && (c.plan_until || 0) > now();
 const sellerSide = c => c.role === 'vendedor' || c.role === 'ambos';
 const buyerSide = c => c.role === 'comprador' || c.role === 'ambos';
+// ---------- límites de conexiones, promoción y conexiones pagadas por el cliente ----------
+const connLimit = c => (isActive(c) ? PLANS[c.plan]?.max_conn : PLANS[c.role === 'ambos' ? 'empresa' : c.role]?.max_conn) ?? null;
+const connUsed = (cid, exceptId = 0) => one(`SELECT count(*) n FROM connections WHERE (seller_id=? OR buyer_id=?) AND status IN ('activa','pendiente') AND id<>?`, cid, cid, exceptId).n;
+const connRoom = (c, exceptId) => { const m = connLimit(c); return m === null || connUsed(c.id, exceptId) < m; };
+const LIMIT_MSG = n => `Has llegado al máximo de ${n} conexiones de tu plan. El plan Compras + Ventas no tiene tope de conexiones.`;
+// Negociaciones del mes: cada negociación con un proveedor o cliente conectado y cada negociación con empresas sin agente
+const monthStart = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const negUsed = (cid, from = monthStart()) => one('SELECT count(*) n FROM deals WHERE (buyer_id=? OR seller_id=?) AND created>=?', cid, cid, from).n
+  + one('SELECT count(*) n FROM ext_negotiations WHERE company_id=? AND created>=?', cid, from).n;
+const negUsage = c => { const p = PLANS[c.plan], used = negUsed(c.id), inc = p?.max_neg ?? null, extra = inc === null ? 0 : Math.max(0, used - inc);
+  return { used, included: inc, extra, extra_price: p?.extra_neg ?? null, extra_eur: Math.round(extra * (p?.extra_neg || 0) * 100) / 100 }; };
+const sponsoredFor = (sellerId, buyerId) => !!one(`SELECT id FROM connections WHERE seller_id=? AND buyer_id=? AND status='activa' AND sponsor_until>?`, sellerId, buyerId, now());
+const hasSponsor = cid => !!one(`SELECT id FROM connections WHERE seller_id=? AND status='activa' AND sponsor_until>?`, cid, now());
+const promoUsed = sellerId => one('SELECT count(*) n FROM companies WHERE promo_by=?', sellerId).n;
 const newCode = name => (name.normalize('NFD').replace(/[^\w]/g, '').toUpperCase().slice(0, 6) || 'EMP') + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
 const publicCompany = c => c && ({ id: c.id, name: c.name, code: c.code, role: c.role, logo: c.logo, color: c.color, tax_id: c.tax_id, address: c.address, phone: c.phone, web: c.web });
 
@@ -79,7 +117,7 @@ function auth(req, res, next) {
   if (!req.user || !req.company) return bad(res, 'Sesión no válida', 401);
   next();
 }
-const active = (req, res, next) => isActive(req.company) || req.user.is_super ? next() : bad(res, 'Tu membresía no está activa. Revisa la sección Membresía.', 402);
+const active = (req, res, next) => isActive(req.company) || hasSponsor(req.company.id) || req.user.is_super ? next() : bad(res, 'Tu membresía no está activa. Revisa la sección Membresía.', 402);
 const admin = (req, res, next) => req.user.is_admin ? next() : bad(res, 'Solo el administrador de la empresa puede hacer esto', 403);
 const sellerOnly = (req, res, next) => sellerSide(req.company) ? next() : bad(res, 'Solo para empresas que venden', 403);
 const buyerOnly = (req, res, next) => buyerSide(req.company) ? next() : bad(res, 'Solo para empresas que compran', 403);
@@ -98,9 +136,16 @@ app.post('/api/signup', (req, res) => {
     cid, email, name, hash(password), ADMIN_EMAIL && email === ADMIN_EMAIL ? 1 : 0, now());
   // Invitación de un proveedor: crea la solicitud de conexión pendiente
   const inv = str(b.invite, 40).toUpperCase();
-  const seller = inv && one('SELECT * FROM companies WHERE code=?', inv);
-  if (seller && sellerSide(seller) && role !== 'vendedor') {
-    run('INSERT OR IGNORE INTO connections (seller_id, buyer_id, status, message, created) VALUES (?,?,?,?,?)', seller.id, cid, 'pendiente', 'Invitación por enlace', now());
+  const host = inv && one('SELECT * FROM companies WHERE code=?', inv);
+  const hostBuys = host && buyerSide(host) && (b.lado === 'compra' || !sellerSide(host));
+  if (host && !hostBuys && sellerSide(host) && role !== 'vendedor' && connRoom(host)) {
+    // Un proveedor invita a su cliente. Si el proveedor tiene plan activo, el cliente entra con la promoción.
+    run('INSERT OR IGNORE INTO connections (seller_id, buyer_id, status, message, requested_by, created) VALUES (?,?,?,?,?,?)', host.id, cid, 'pendiente', 'Invitación por enlace', 'vendedor', now());
+    if (role === 'comprador' && isActive(host) && promoUsed(host.id) < PROMO.max)
+      run(`UPDATE companies SET plan='comprador', plan_status='active', plan_until=?, promo_by=? WHERE id=?`, now() + PROMO.days * DAY, host.id, cid);
+  } else if (hostBuys && role !== 'comprador' && connRoom(host)) {
+    // Un cliente invita a su proveedor
+    run('INSERT OR IGNORE INTO connections (seller_id, buyer_id, status, message, requested_by, created) VALUES (?,?,?,?,?,?)', cid, host.id, 'pendiente', 'Invitación de tu cliente', 'comprador', now());
   }
   startSession(res, req, Number(u.lastInsertRowid));
   res.json({ ok: true });
@@ -118,14 +163,19 @@ app.post('/api/logout', (req, res) => {
 });
 app.get('/api/invite/:code', (req, res) => {
   const c = one('SELECT * FROM companies WHERE code=?', str(req.params.code, 40).toUpperCase());
-  res.json(c && sellerSide(c) ? { name: c.name, logo: c.logo, color: c.color } : null);
+  if (!c) return res.json(null);
+  const kind = sellerSide(c) && (c.role !== 'ambos' || req.query.lado !== 'compra') ? 'vendedor' : 'comprador';
+  res.json({ name: c.name, logo: c.logo, color: c.color, kind, promo: kind === 'vendedor' && isActive(c) && promoUsed(c.id) < PROMO.max ? Math.round(PROMO.days / 30) : 0 });
 });
 app.get('/api/me', auth, (req, res) => {
   const c = req.company;
   res.json({
     user: { id: req.user.id, name: req.user.name, email: req.user.email, is_admin: !!req.user.is_admin, is_super: !!req.user.is_super },
-    company: { ...publicCompany(c), plan: c.plan, plan_status: c.plan_status, plan_until: c.plan_until, active: isActive(c) },
-    plans: Object.fromEntries(Object.entries(PLANS).map(([k, p]) => [k, { name: p.name, price: p.price, roles: p.roles }])),
+    company: { ...publicCompany(c), plan: c.plan, plan_status: c.plan_status, plan_until: c.plan_until, active: isActive(c), sponsored: !isActive(c) && hasSponsor(c.id),
+      promo_by: c.promo_by ? one('SELECT name FROM companies WHERE id=?', c.promo_by)?.name : null },
+    usage: { conexiones: connUsed(c.id), max: connLimit(c), negociaciones: negUsage(c), promo: sellerSide(c) ? { used: promoUsed(c.id), max: PROMO.max, months: Math.round(PROMO.days / 30) } : null },
+    plans: Object.fromEntries(Object.entries(PLANS).map(([k, p]) => [k, { name: p.name, price: p.price, roles: p.roles, max_conn: p.max_conn, max_neg: p.max_neg ?? null, extra_neg: p.extra_neg ?? null }])),
+    conexion: { price: CONEXION.price },
     features: { stripe: !!STRIPE_KEY, instrucciones: !!AGENT_KEY }
   });
 });
@@ -222,20 +272,28 @@ app.get('/api/connections', auth, (req, res) => {
   const rows = all(`SELECT k.*, s.name s_name, s.logo s_logo, s.color s_color, s.code s_code, b.name b_name, b.logo b_logo, b.color b_color, b.code b_code
     FROM connections k JOIN companies s ON s.id=k.seller_id JOIN companies b ON b.id=k.buyer_id WHERE k.seller_id=? OR k.buyer_id=? ORDER BY k.created DESC`, cid, cid);
   res.json(rows.map(r => ({
-    id: r.id, status: r.status, message: r.message, created: r.created,
+    id: r.id, status: r.status, message: r.message, created: r.created, requested_by: r.requested_by || 'vendedor',
     as: r.seller_id === cid ? 'vendedor' : 'comprador',
+    sponsor_until: r.sponsor_until > now() ? r.sponsor_until : null,
+    seller_plan: isActive(one('SELECT * FROM companies WHERE id=?', r.seller_id)),
     other: r.seller_id === cid ? { id: r.buyer_id, name: r.b_name, logo: r.b_logo, color: r.b_color, code: r.b_code } : { id: r.seller_id, name: r.s_name, logo: r.s_logo, color: r.s_color, code: r.s_code },
     shared: r.seller_id === cid && r.status === 'activa' ? getPolicy(r.buyer_id, 'compra').compartir : null
   })));
 });
-app.post('/api/connections', auth, active, sellerOnly, (req, res) => {
-  const buyer = one('SELECT * FROM companies WHERE code=?', str(req.body?.code, 40).toUpperCase());
-  if (!buyer || !buyerSide(buyer)) return bad(res, 'No existe ninguna empresa compradora con ese código');
-  if (buyer.id === req.company.id) return bad(res, 'No puedes conectarte contigo mismo');
-  const ex = one('SELECT * FROM connections WHERE seller_id=? AND buyer_id=?', req.company.id, buyer.id);
+// Un proveedor pide conexión a un cliente, o un cliente se la pide a un proveedor (as: 'comprador')
+app.post('/api/connections', auth, active, (req, res) => {
+  const me = req.company, asBuyer = req.body?.as === 'comprador' ? buyerSide(me) : !sellerSide(me);
+  if (asBuyer ? !buyerSide(me) : !sellerSide(me)) return bad(res, 'Tu tipo de empresa no permite esta conexión', 403);
+  const other = one('SELECT * FROM companies WHERE code=?', str(req.body?.code, 40).toUpperCase());
+  if (!other || !(asBuyer ? sellerSide(other) : buyerSide(other))) return bad(res, asBuyer ? 'No existe ningún proveedor con ese código' : 'No existe ninguna empresa compradora con ese código');
+  if (other.id === me.id) return bad(res, 'No puedes conectarte contigo mismo');
+  const [sid, bid] = asBuyer ? [other.id, me.id] : [me.id, other.id];
+  const ex = one('SELECT * FROM connections WHERE seller_id=? AND buyer_id=?', sid, bid);
   if (ex && ex.status === 'activa') return bad(res, 'Ya estáis conectados');
-  if (ex) run('UPDATE connections SET status=?, message=?, created=? WHERE id=?', 'pendiente', str(req.body?.message, 600), now(), ex.id);
-  else run('INSERT INTO connections (seller_id, buyer_id, status, message, created) VALUES (?,?,?,?,?)', req.company.id, buyer.id, 'pendiente', str(req.body?.message, 600), now());
+  if (!connRoom(me, ex?.id)) return bad(res, LIMIT_MSG(connLimit(me)));
+  const by = asBuyer ? 'comprador' : 'vendedor';
+  if (ex) run('UPDATE connections SET status=?, message=?, requested_by=?, created=? WHERE id=?', 'pendiente', str(req.body?.message, 600), by, now(), ex.id);
+  else run('INSERT INTO connections (seller_id, buyer_id, status, message, requested_by, created) VALUES (?,?,?,?,?,?)', sid, bid, 'pendiente', str(req.body?.message, 600), by, now());
   res.json({ ok: true });
 });
 app.post('/api/connections/:id/status', auth, active, (req, res) => {
@@ -243,8 +301,11 @@ app.post('/api/connections/:id/status', auth, active, (req, res) => {
   const st = req.body?.status;
   if (!k || (k.buyer_id !== req.company.id && k.seller_id !== req.company.id)) return bad(res, 'Conexión no encontrada', 404);
   const isBuyer = k.buyer_id === req.company.id;
-  const allowed = isBuyer ? ['activa', 'rechazada', 'pausada'] : ['pausada'];
+  // El cliente autoriza siempre. El proveedor solo acepta (o rechaza) cuando es el cliente quien le ha pedido la conexión.
+  const sellerAccepts = !isBuyer && k.requested_by === 'comprador' && k.status === 'pendiente';
+  const allowed = isBuyer ? ['activa', 'rechazada', 'pausada'] : sellerAccepts ? ['activa', 'rechazada', 'pausada'] : ['pausada'];
   if (!allowed.includes(st)) return bad(res, 'Solo el cliente puede autorizar la conexión');
+  if (st === 'activa' && k.status !== 'activa' && !connRoom(req.company, k.id)) return bad(res, LIMIT_MSG(connLimit(req.company)));
   run('UPDATE connections SET status=? WHERE id=?', st, k.id);
   res.json({ ok: true });
 });
@@ -288,7 +349,7 @@ app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
     ? byCode.map(x => ({ ...x.product, seller_name: one('SELECT name FROM companies WHERE id=?', x.product.company_id).name }))
     : all(`SELECT p.*, c.name seller_name FROM products p JOIN connections k ON k.seller_id=p.company_id AND k.buyer_id=? AND k.status='activa'
       JOIN companies c ON c.id=p.company_id WHERE p.active=1 AND lower(trim(p.name))=lower(trim(?))`, buyer.id, need.product_name))
-    .filter(p => isActive(one('SELECT * FROM companies WHERE id=?', p.company_id)));
+    .filter(p => isActive(one('SELECT * FROM companies WHERE id=?', p.company_id)) || sponsoredFor(p.company_id, buyer.id));
 
   const offers = [];
   for (const p of candidates) {
@@ -416,8 +477,10 @@ app.post('/api/billing/checkout', auth, admin, async (req, res) => {
   if (!plan) return bad(res, 'Plan no válido');
   if (!plan.roles.includes(req.company.role)) return bad(res, 'Ese plan no corresponde a tu tipo de empresa');
   if (!STRIPE_KEY || !plan.stripe) {
-    // Modo demostración: activa 30 días sin cobrar
-    run('UPDATE companies SET plan=?, plan_status=?, plan_until=? WHERE id=?', planKey, 'active', now() + 30 * DAY, req.company.id);
+    // Modo demostración: activa 30 días sin cobrar (si quedaban días de promoción, se suman)
+    const from = req.company.plan === planKey && isActive(req.company) ? req.company.plan_until : now();
+    run('UPDATE companies SET plan=?, plan_status=?, plan_until=? WHERE id=?', planKey, 'active', from + 30 * DAY, req.company.id);
+    if (planKey === 'empresa') run(`UPDATE companies SET role='ambos' WHERE id=?`, req.company.id);
     return res.json({ demo: true });
   }
   const form = new URLSearchParams({
@@ -431,15 +494,48 @@ app.post('/api/billing/checkout', auth, admin, async (req, res) => {
   res.json({ url: j.url });
 });
 
+// El cliente paga la conexión de su proveedor (14 €/mes): el proveedor puede venderle sin tener plan Ventas
+app.post('/api/billing/connection/:id', auth, admin, async (req, res) => {
+  const k = one('SELECT * FROM connections WHERE id=? AND buyer_id=?', +req.params.id, req.company.id);
+  if (!k) return bad(res, 'Conexión no encontrada', 404);
+  if (!isActive(req.company)) return bad(res, 'Tu membresía no está activa. Revisa la sección Membresía.', 402);
+  if (k.status !== 'activa') return bad(res, 'Primero hay que autorizar la conexión');
+  if (k.sponsor_until > now()) return bad(res, 'Ya estás pagando esta conexión');
+  if (!STRIPE_KEY || !CONEXION.stripe) {
+    run('UPDATE connections SET sponsor_until=? WHERE id=?', now() + 30 * DAY, k.id);
+    return res.json({ demo: true });
+  }
+  const form = new URLSearchParams({
+    mode: 'subscription', 'line_items[0][price]': CONEXION.stripe, 'line_items[0][quantity]': '1',
+    success_url: `${BASE_URL}/app#conexiones?ok=1`, cancel_url: `${BASE_URL}/app#conexiones`,
+    client_reference_id: String(req.company.id), customer_email: req.user.email, 'metadata[kind]': 'conexion', 'metadata[connection_id]': String(k.id), locale: 'es'
+  });
+  const r = await fetch('https://api.stripe.com/v1/checkout/sessions', { method: 'POST', headers: { Authorization: `Bearer ${STRIPE_KEY}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form });
+  const j = await r.json();
+  if (!j.url) return bad(res, 'No se ha podido iniciar el pago: ' + (j.error?.message || 'error de Stripe'));
+  res.json({ url: j.url });
+});
+app.delete('/api/billing/connection/:id', auth, admin, async (req, res) => {
+  const k = one('SELECT * FROM connections WHERE id=? AND buyer_id=?', +req.params.id, req.company.id);
+  if (!k) return bad(res, 'Conexión no encontrada', 404);
+  if (k.sponsor_sub && STRIPE_KEY) await fetch('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(k.sponsor_sub), { method: 'DELETE', headers: { Authorization: `Bearer ${STRIPE_KEY}` } }).catch(() => null);
+  run('UPDATE connections SET sponsor_until=NULL, sponsor_sub=NULL WHERE id=?', k.id);
+  res.json({ ok: true });
+});
+
 // ---------- administración de la plataforma (tú) ----------
 const superOnly = (req, res, next) => req.user.is_super ? next() : bad(res, 'Solo administración IAC', 403);
 app.get('/api/admin/companies', auth, superOnly, (req, res) => {
-  res.json(all(`SELECT c.id, c.name, c.code, c.role, c.plan, c.plan_status, c.plan_until, c.created,
+  const rows = all(`SELECT c.id, c.name, c.code, c.role, c.plan, c.plan_status, c.plan_until, c.created,
     (SELECT count(*) FROM users u WHERE u.company_id=c.id) users,
     (SELECT count(*) FROM deals d WHERE (d.buyer_id=c.id OR d.seller_id=c.id) AND d.status='cerrado') orders,
     (SELECT coalesce(sum(total),0) FROM deals d WHERE d.seller_id=c.id AND d.status='cerrado') sold,
+    (SELECT name FROM companies p WHERE p.id=c.promo_by) promo_by, (SELECT count(*) FROM companies p WHERE p.promo_by=c.id) promo_given,
+    (SELECT count(*) FROM connections k WHERE (k.seller_id=c.id OR k.buyer_id=c.id) AND k.status IN ('activa','pendiente')) conns,
+    (SELECT count(*) FROM connections k WHERE k.buyer_id=c.id AND k.sponsor_until>?) sponsoring,
     c.wa_enabled, (SELECT count(*) FROM wa_log w WHERE w.company_id=c.id AND w.status='enviado' AND w.created>=?) wa_month
-    FROM companies c ORDER BY c.created DESC`, (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime(); })()));
+    FROM companies c ORDER BY c.created DESC`, now(), monthStart());
+  res.json(rows.map(r => ({ ...r, neg: negUsage(r) })));
 });
 app.post('/api/admin/companies/:id', auth, superOnly, (req, res) => {
   if (req.body?.wa_enabled !== undefined) { run('UPDATE companies SET wa_enabled=? WHERE id=?', req.body.wa_enabled ? 1 : 0, +req.params.id); return res.json({ ok: true }); }
@@ -493,7 +589,8 @@ require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, p
 require('./external').register(app, { auth, active, bad, str, num, publicCompany, sellerSide, buyerSide, isActive, AGENT_KEY, AGENT_MODEL });
 
 app.get('/healthz', (req, res) => res.send('ok'));
-app.get('/api/plans', (req, res) => res.json(Object.fromEntries(Object.entries(PLANS).map(([k, p]) => [k, { name: p.name, price: p.price }]))));
+app.get('/api/plans', (req, res) => res.json({ ...Object.fromEntries(Object.entries(PLANS).map(([k, p]) => [k, { name: p.name, price: p.price, max_conn: p.max_conn, max_neg: p.max_neg ?? null, extra_neg: p.extra_neg ?? null }])),
+  conexion: { name: CONEXION.name, price: CONEXION.price }, promo: { clientes: PROMO.max, meses: Math.round(PROMO.days / 30) } }));
 // Página de inicio pública en "/" y aplicación en "/app"
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'landing.html')));
 app.get(['/app', '/app/'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
