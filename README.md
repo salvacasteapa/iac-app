@@ -58,3 +58,8 @@ Sin Stripe configurado, al elegir un plan se activan 30 días sin cobro (modo de
 
 ## Variables de entorno
 Están en `.env.example`.
+
+## Avisos fuera de la app
+
+- **Notificaciones push (gratis):** no hay que configurar nada. Cada usuario las activa en «Avisos y seguimiento → Cómo me llegan». En iPhone, primero «Añadir a pantalla de inicio».
+- **WhatsApp (extra de pago):** añade en Render → Environment `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID` y, si cambia, `WHATSAPP_TEMPLATE` (por defecto `aviso_iac`). La plantilla debe tener 3 variables: título, detalle y enlace. Después, en «Administración IAC», activa el extra para cada empresa que lo pague; ahí ves cuántos mensajes ha enviado este mes.

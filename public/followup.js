@@ -61,8 +61,9 @@ async function viewAvisos() {
   const tab = route().q.get('ver') || 'avisos';
   const isAdm = ME.user.is_admin;
   document.querySelectorAll('#pops .pop').forEach(x => x.remove());
-  const tabs = `<div><div class="seg" style="margin-bottom:14px">${[['avisos', 'Avisos'], isSeller() && ['clientes', 'Niveles por cliente'], ['reglas', 'Reglas de seguimiento']].filter(Boolean).map(([k, t]) => `<a class="${tab === k ? 'on' : ''}" href="#avisos?ver=${k}">${t}</a>`).join('')}</div></div>`;
+  const tabs = `<div><div class="seg" style="margin-bottom:14px">${[['avisos', 'Avisos'], isSeller() && ['clientes', 'Niveles por cliente'], ['reglas', 'Reglas de seguimiento'], ['canales', 'Cómo me llegan']].filter(Boolean).map(([k, t]) => `<a class="${tab === k ? 'on' : ''}" href="#avisos?ver=${k}">${t}</a>`).join('')}</div></div>`;
   const head = `<h1>Avisos y seguimiento</h1><p class="lead">No todos los pedidos necesitan la misma atención. Cada operación recibe un nivel (por cliente y por importe) y, según el nivel y si se ha ganado, perdido o está en espera, avisa en el momento a quien corresponde y propone una llamada o una reunión.</p>${tabs}`;
+  if (tab === 'canales') return viewCanales(head);
   const F = await api('/followup').catch(() => null);
   const S = F?.settings;
   if (tab === 'clientes' && F) {
@@ -104,4 +105,38 @@ async function viewAvisos() {
       <div class="btns">${alertActions(a)}</div></div>`).join('') : '<div class="card empty"><p class="muted">No hay avisos aquí.</p></div>'}`;
   document.querySelectorAll('[data-dis]').forEach(b => b.onclick = async () => { await api(`/alerts/${b.dataset.dis}/descartar`, { body: {} }); render(); });
   list.filter(a => !a.read && a.for_me).forEach(a => api(`/alerts/${a.id}/leido`, { body: {} }).catch(() => { }));
+}
+
+// ---------------- canales: push y WhatsApp ----------------
+const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+async function pushSubscribe() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error(/iPhone|iPad/.test(navigator.userAgent) ? 'En iPhone: pulsa Compartir → «Añadir a pantalla de inicio», abre la app desde ese icono y vuelve aquí.' : 'Este navegador no admite notificaciones push');
+  const perm = await Notification.requestPermission(); if (perm !== 'granted') throw new Error('No has dado permiso para las notificaciones');
+  const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' }); await navigator.serviceWorker.ready;
+  const { key } = await api('/push/key');
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(key) });
+  await api('/push/subscribe', { body: { subscription: sub.toJSON() } });
+}
+async function viewCanales(head) {
+  const P = await api('/notify/prefs');
+  let here = false; try { const reg = await navigator.serviceWorker?.getRegistration('/'); here = !!(await reg?.pushManager.getSubscription()); } catch { }
+  const lvSel = (name, v) => `<select name="${name}">${[1, 2, 3, 4].map(k => `<option value="${k}" ${v === k ? 'selected' : ''}>Desde N${k}${k === 1 ? ' (todos)' : ''}</option>`).join('')}</select>`;
+  const waState = !P.wa_platform ? ['Pendiente de conectar en la plataforma', 'wait'] : !P.wa_company ? ['Extra no activado para tu empresa', 'mute'] : ['Activo', 'ok'];
+  $('#c').innerHTML = head + `<form id="fp"><div class="grid">
+    <div class="card"><h2>Notificaciones en el móvil y el ordenador</h2><p class="hint">Gratis. Llegan aunque tengas la app cerrada. Actívalo en cada dispositivo donde quieras recibirlos.</p>
+      <p>${here ? '<span class="pill ok">✔ Activadas en este dispositivo</span>' : '<span class="pill mute">No activadas en este dispositivo</span>'} <span class="muted">${P.devices} dispositivo${P.devices === 1 ? '' : 's'} en total</span></p>
+      <label>Qué avisos</label>${lvSel('push_level', P.push_level)}
+      <div class="btns"><button type="button" class="p" id="pon">${here ? 'Volver a activar' : 'Activar en este dispositivo'}</button><button type="button" id="ptest">Enviar prueba</button></div>
+      <p class="muted" style="font-size:13px">En iPhone: abre la web en Safari, pulsa Compartir → «Añadir a pantalla de inicio» y actívalo desde ese icono.</p></div>
+    <div class="card"><h2>WhatsApp</h2><p class="hint">Servicio extra. Cada aviso es un mensaje de WhatsApp a tu móvil.</p>
+      <p><span class="pill ${waState[1]}">${waState[0]}</span> ${P.wa_company ? `<span class="muted">${P.wa_month} mensajes este mes en tu empresa</span>` : ''}</p>
+      <label>Tu móvil</label><input name="wa_phone" type="tel" value="${P.wa_phone ? '+' + h(P.wa_phone) : ''}" placeholder="+34 600 123 456">
+      <label>Qué avisos</label>${lvSel('wa_level', P.wa_level)}
+      <label class="chk"><input type="checkbox" name="wa_optin" ${P.wa_optin ? 'checked' : ''}><span>Acepto recibir avisos de trabajo por WhatsApp<small>Puedes quitarlo cuando quieras.</small></span></label>
+      <div class="btns"><button type="button" id="wtest" ${P.wa_platform && P.wa_company ? '' : 'disabled'}>Enviar prueba</button></div></div></div>
+    <div class="btns"><button class="p">Guardar preferencias</button></div></form>`;
+  $('#pon').onclick = async () => { try { await pushSubscribe(); toast('Notificaciones activadas en este dispositivo'); render(); } catch (e) { toast(e.message); } };
+  $('#ptest').onclick = async () => { try { const r = await api('/notify/test', { body: { channel: 'push' } }); toast(r.sent ? 'Prueba enviada' : 'No hay ningún dispositivo activado'); } catch (e) { toast(e.message); } };
+  $('#wtest').onclick = async () => { try { await api('/notify/test', { body: { channel: 'whatsapp' } }); toast('WhatsApp de prueba enviado'); } catch (e) { toast(e.message); } };
+  $('#fp').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); try { await api('/notify/prefs', { method: 'PUT', body: { ...f, wa_optin: !!f.wa_optin } }); toast('Preferencias guardadas'); render(); } catch (x) { toast(x.message); } };
 }

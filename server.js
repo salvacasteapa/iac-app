@@ -437,10 +437,12 @@ app.get('/api/admin/companies', auth, superOnly, (req, res) => {
   res.json(all(`SELECT c.id, c.name, c.code, c.role, c.plan, c.plan_status, c.plan_until, c.created,
     (SELECT count(*) FROM users u WHERE u.company_id=c.id) users,
     (SELECT count(*) FROM deals d WHERE (d.buyer_id=c.id OR d.seller_id=c.id) AND d.status='cerrado') orders,
-    (SELECT coalesce(sum(total),0) FROM deals d WHERE d.seller_id=c.id AND d.status='cerrado') sold
-    FROM companies c ORDER BY c.created DESC`));
+    (SELECT coalesce(sum(total),0) FROM deals d WHERE d.seller_id=c.id AND d.status='cerrado') sold,
+    c.wa_enabled, (SELECT count(*) FROM wa_log w WHERE w.company_id=c.id AND w.status='enviado' AND w.created>=?) wa_month
+    FROM companies c ORDER BY c.created DESC`, (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime(); })()));
 });
 app.post('/api/admin/companies/:id', auth, superOnly, (req, res) => {
+  if (req.body?.wa_enabled !== undefined) { run('UPDATE companies SET wa_enabled=? WHERE id=?', req.body.wa_enabled ? 1 : 0, +req.params.id); return res.json({ ok: true }); }
   const st = req.body?.plan_status, days = num(req.body?.days);
   if (!['trial', 'active', 'cancelado', 'impagado'].includes(st)) return bad(res, 'Estado no válido');
   run('UPDATE companies SET plan_status=?, plan_until=? WHERE id=?', st, now() + (days ?? 30) * DAY, +req.params.id);
@@ -481,6 +483,7 @@ app.get('/pedido/:id', (req, res, next) => {
 
 // Catálogo enriquecido, certificados y proyectos
 codes.register(app, { auth, active, bad, str });
+require('./notify').register(app, { auth, bad, num, str });
 followup.register(app, { auth, active, bad, str, num, admin });
 specials.register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./agenda').register(app, { auth, active, bad, str, num });

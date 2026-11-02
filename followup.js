@@ -74,7 +74,9 @@ function alert({ cid, otherId, otherName, dealId, extId, outcome, total, product
   const r = run(`INSERT INTO alerts (company_id, other_id, other_name, deal_id, ext_id, outcome, level, title, summary, total, product_id, suggest_kind, suggest_days, owner_id, recipients, status, created)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, cid, otherId || null, otherName || null, dealId || null, extId || null, outcome, level, title, summary || null, total ?? null, productId || null,
     kind === 'nada' ? null : kind, days, owner, JSON.stringify([...rec]), rec.size ? 'nuevo' : 'registrado', now());
-  return Number(r.lastInsertRowid);
+  const id = Number(r.lastInsertRowid);
+  if (rec.size) setImmediate(() => require('./notify').dispatch(id).catch(e => console.error('aviso', id, e.message)));
+  return id;
 }
 
 const eur = n => Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });

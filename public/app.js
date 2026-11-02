@@ -328,9 +328,11 @@ async function viewAdmin() {
   const mrr = cs.filter(c => c.plan_status === 'active').reduce((a, c) => a + (ME.plans[c.plan]?.price || 0), 0);
   $('#c').innerHTML = `<h1>Administración IAC</h1><p class="lead">Todas las empresas de la plataforma.</p>
    <div class="kpis"><div class="kpi"><div class="v">${cs.length}</div><div class="l">Empresas</div></div><div class="kpi"><div class="v">${cs.filter(c => c.plan_status === 'active').length}</div><div class="l">Membresías activas</div></div><div class="kpi"><div class="v">${eur(mrr)}</div><div class="l">Ingreso mensual recurrente</div></div><div class="kpi"><div class="v">${cs.reduce((a, c) => a + c.orders, 0) / 2 | 0}</div><div class="l">Pedidos cerrados (aprox.)</div></div></div>
-   <div class="card" style="overflow-x:auto"><table><tr><th>Empresa</th><th>Código</th><th>Tipo</th><th>Plan</th><th>Estado</th><th>Hasta</th><th class="n">Usuarios</th><th class="n">Pedidos</th><th></th></tr>
+   <div class="card" style="overflow-x:auto"><table><tr><th>Empresa</th><th>Código</th><th>Tipo</th><th>Plan</th><th>Estado</th><th>Hasta</th><th class="n">Usuarios</th><th class="n">Pedidos</th><th>WhatsApp (extra)</th><th></th></tr>
    ${cs.map(c => `<tr><td>${h(c.name)}</td><td><code class="k">${h(c.code)}</code></td><td>${h(c.role)}</td><td>${h(ME.plans[c.plan]?.name || '—')}</td><td>${pill(c.plan_status)}</td><td>${fdate(c.plan_until)}</td><td class="n">${c.users}</td><td class="n">${c.orders}</td>
+     <td style="white-space:nowrap"><label class="chk" style="margin:0"><input type="checkbox" data-wa="${c.id}" ${c.wa_enabled ? 'checked' : ''}><span>${c.wa_month} este mes</span></label></td>
      <td style="white-space:nowrap"><button data-c="${c.id}" data-s="active">+30 días</button> <button class="danger" data-c="${c.id}" data-s="cancelado">Suspender</button></td></tr>`).join('')}</table></div>`;
+  document.querySelectorAll('[data-wa]').forEach(i => i.onchange = async () => { await api('/admin/companies/' + i.dataset.wa, { body: { wa_enabled: i.checked } }); toast(i.checked ? 'WhatsApp activado' : 'WhatsApp desactivado'); });
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = async () => { await api('/admin/companies/' + b.dataset.c, { body: { plan_status: b.dataset.s, days: b.dataset.s === 'active' ? 30 : 0 } }); render(); });
 }
 

@@ -81,6 +81,14 @@ h2{font-size:clamp(28px,3.4vw,42px);letter-spacing:-.03em;line-height:1.12;margi
 .side li:first-child{border-top:0}
 .side li svg{flex:none;margin-top:3px}
 /* rules */
+.feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-top:44px}
+.feat{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:24px;position:relative;transition:transform .15s,box-shadow .15s}
+.feat:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(16,24,40,.08)}
+.feat .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:14px}
+.feat h4{margin:0 0 6px;font-size:17px}
+.feat p{margin:0;color:var(--quiet);font-size:14.5px}
+.feat .new{position:absolute;top:18px;right:18px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--sell);background:var(--sell-t);border-radius:99px;padding:3px 9px}
+.feat .extra{color:#a76a00;background:#fff3dc}
 .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:44px}
 .rule{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:22px}
 .rule .ic{width:42px;height:42px;border-radius:12px;background:var(--bg);display:grid;place-items:center;margin-bottom:14px}
@@ -136,7 +144,7 @@ footer a{color:#c9d1e6;text-decoration:none}
 <header class="nav"><div class="wrap">
   <a class="logo" href="/"><span class="mk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h12l-3-3M20 16H8l3 3"/></svg></span>IAC</a>
   <nav>
-    <a href="#como">Cómo funciona</a><a href="#reglas">Tus reglas</a><a href="#planes">Planes</a>
+    <a href="#como">Cómo funciona</a><a href="#funciones">Funciones</a><a href="#reglas">Tus reglas</a><a href="#planes">Planes</a>
     <a class="btn ghost" href="/app#login">Entrar</a><a class="btn pri" href="/app#registro">Prueba gratis</a>
   </nav>
 </div></header>
@@ -193,7 +201,13 @@ footer a{color:#c9d1e6;text-decoration:none}
   </div>
 </div></section>
 
-<section id="reglas"><div class="wrap">
+<section id="funciones"><div class="wrap">
+  <div class="center"><div class="kicker">Todo en un sitio</div><h2>Lo que necesita tu equipo comercial</h2>
+  <p class="lead">Los agentes se ocupan de los pedidos de siempre. Tu equipo tiene a mano todo lo demás: catálogo, códigos, condiciones especiales, agenda y avisos.</p></div>
+  <div class="feats"><div class="feat"><div class="ic" style="background:#e9f0ff"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f6bff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h4>Empresas sin agente</h4><p>Negocia también con clientes y proveedores que no usan IAC. Reciben un enlace con tu marca y conversan por escrito con tu asistente, que se presenta como tal y les pasa con una persona cuando lo piden.</p></div><div class="feat"><div class="ic" style="background:#e3f6ee"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10a36e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div><span class="new">Nuevo</span><h4>Catálogo con fotos y vídeo</h4><p>Cada artículo con hasta 4 fotos, un vídeo, su ficha y sus certificados. Tus clientes ven tu escaparate; el precio mínimo nunca.</p></div><div class="feat"><div class="ic" style="background:#fff3dc"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a76a00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.2 13.9 7 23l5-3 5 3-1.2-9.1"/></svg></div><span class="new">Nuevo</span><h4>Certificados y proyectos</h4><p>ISO, marcado CE u homologaciones con su fecha de validez. Y tus trabajos reales, con fotos y comentarios de los clientes.</p></div><div class="feat"><div class="ic" style="background:#eef0f5"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0b1630" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg></div><span class="new">Nuevo</span><h4>Doble código sin errores</h4><p>El código del fabricante y el del cliente, unidos y confirmados por las dos empresas. Los dos salen en el pedido. El nombre puede cambiar sin que se rompa nada.</p></div><div class="feat"><div class="ic" style="background:#fdecea"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d03b2f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div><span class="new">Nuevo</span><h4>Autorizaciones especiales</h4><p>Precio especial, descuento máximo o plazo especial para un pedido, una familia de productos o un cliente. El pedido dice quién lo autorizó.</p></div><div class="feat"><div class="ic" style="background:#e9f0ff"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f6bff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><span class="new">Nuevo</span><h4>Agenda comercial</h4><p>Llamadas, visitas y reuniones con su motivo: oferta, producto nuevo, contacto regular, reposición, cobro… Apuntas el resultado y te propone el siguiente paso.</p></div><div class="feat"><div class="ic" style="background:#e3f6ee"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10a36e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-6"/></svg></div><span class="new">Nuevo</span><h4>Seguimiento escalado</h4><p>No todos los pedidos merecen la misma atención. Cuatro niveles por cliente e importe deciden a quién avisar y si proponer una llamada o una reunión.</p></div><div class="feat"><div class="ic" style="background:#fff3dc"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a76a00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div><span class="new extra">WhatsApp: extra</span><h4>Avisos al momento</h4><p>Cuando un cliente pide, se pierde un pedido o queda en espera, el responsable y el gerente lo saben al instante en el móvil o el ordenador. También por WhatsApp.</p></div></div>
+</div></section>
+
+<section id="reglas" class="bg"><div class="wrap">
   <div class="kicker">Tú mandas</div><h2>Los agentes nunca salen de tus reglas</h2>
   <p class="lead">Cada empresa configura a su agente como configuraría a un buen empleado, y le da instrucciones con sus propias palabras.</p>
   <div class="rules">
@@ -205,7 +219,7 @@ footer a{color:#c9d1e6;text-decoration:none}
   </div>
 </div></section>
 
-<section class="bg"><div class="wrap">
+<section><div class="wrap">
   <div class="band">
     <div><div class="kicker" style="color:#5fe0b0">Tu marca, no la nuestra</div><h2>Tu cliente ve tu logo, tus colores y tus pedidos</h2>
       <p>Cada empresa trabaja en su propio espacio, con su membrete. Los pedidos salen listos para imprimir o guardar en PDF, con los datos fiscales de las dos partes.</p>
@@ -223,11 +237,11 @@ footer a{color:#c9d1e6;text-decoration:none}
     <div class="plan"><h3>Compras</h3><div class="who">Para empresas que compran a proveedores</div><div class="pr" data-p="comprador">29 €<span> /mes</span></div>
       <ul><li>✓ Agente de compras</li><li>✓ Todos tus proveedores conectados</li><li>✓ Reglas de cierre y aprobaciones</li><li>✓ Pedidos con tu membrete</li></ul><a class="btn dark" href="/app#registro">Empezar gratis</a></div>
     <div class="plan hot"><h3>Ventas</h3><div class="who">Para empresas que venden a clientes</div><div class="pr" data-p="vendedor">99 €<span> /mes</span></div>
-      <ul><li>✓ Agente de ventas</li><li>✓ Clientes conectados ilimitados</li><li>✓ Catálogo con precios mínimos y costes</li><li>✓ Invitaciones con tu marca</li></ul><a class="btn grn" href="/app#registro">Empezar gratis</a></div>
+      <ul><li>✓ Agente de ventas</li><li>✓ Clientes conectados ilimitados</li><li>✓ Catálogo con precios mínimos y costes</li><li>✓ Invitaciones con tu marca</li><li>✓ Catálogo con fotos, vídeo y certificados</li><li>✓ Agenda, seguimiento y avisos</li></ul><a class="btn grn" href="/app#registro">Empezar gratis</a></div>
     <div class="plan"><h3>Compras + Ventas</h3><div class="who">Para empresas que hacen las dos cosas</div><div class="pr" data-p="empresa">149 €<span> /mes</span></div>
-      <ul><li>✓ Los dos agentes</li><li>✓ Todo lo de Compras y Ventas</li><li>✓ Varios usuarios por empresa</li><li>✓ Panel con resultados de ambos lados</li></ul><a class="btn dark" href="/app#registro">Empezar gratis</a></div>
+      <ul><li>✓ Los dos agentes</li><li>✓ Todo lo de Compras y Ventas</li><li>✓ Varios usuarios por empresa</li><li>✓ Panel con resultados de ambos lados</li><li>✓ Autorizaciones especiales y doble código</li></ul><a class="btn dark" href="/app#registro">Empezar gratis</a></div>
   </div>
-  <p class="note center">Precios sin IVA. Puedes cancelar cuando quieras.</p>
+  <p class="note center">Precios sin IVA. Puedes cancelar cuando quieras. Avisos por WhatsApp como servicio extra, según uso.</p>
 </div></section>
 
 <section class="bg"><div class="wrap">
@@ -237,6 +251,9 @@ footer a{color:#c9d1e6;text-decoration:none}
     <details><summary>¿Y si el agente cierra algo que no quiero?</summary><p>No puede. Nunca sale de tus precios y límites. Todo lo que queda fuera te llega para aprobar o rechazar, y puedes pedir que te consulte siempre antes de cerrar.</p></details>
     <details><summary>¿Necesito instalar algo?</summary><p>No. IAC funciona desde el navegador, en el ordenador o en el móvil.</p></details>
     <details><summary>¿Qué pasa con mis comerciales?</summary><p>Siguen siendo clave: consiguen las conexiones y cuidan la relación con el cliente. Dejan de dedicar horas a pedidos repetitivos y atienden más cuentas.</p></details>
+    <details><summary>¿Cómo sé que mi código y el de mi cliente son el mismo artículo?</summary><p>Porque las dos empresas lo confirman. El código del fabricante y el del cliente quedan unidos, el agente solo pide por código cuando los dos están confirmados, y los dos aparecen en el pedido. Si el fabricante cambia su código, hay que volver a confirmarlo.</p></details>
+    <details><summary>¿Puedo dar condiciones especiales a un cliente?</summary><p>Sí. El jefe de ventas autoriza un precio especial, un descuento máximo o un plazo especial para un pedido, una familia de productos o un cliente, con fechas y número de usos. El pedido indica quién lo autorizó.</p></details>
+    <details><summary>¿Me entero cuando un cliente hace un pedido?</summary><p>Al momento. Según el nivel de atención del cliente y el importe, avisa al comercial responsable y al gerente en el móvil o el ordenador, y les propone una llamada o una reunión que agendan con un clic. Por WhatsApp, como servicio extra.</p></details>
     <details><summary>¿Puedo dejar de usarlo cuando quiera?</summary><p>Sí. La membresía es mensual y sin permanencia.</p></details>
   </div>
 </div></section>
@@ -251,7 +268,7 @@ footer a{color:#c9d1e6;text-decoration:none}
 
 <script>
 // Las invitaciones antiguas llegaban a "/?invita=…": se mandan a la aplicación.
-(function(){if(/^#(login|registro|inicio|operaci|comprar|catalogo|conexiones|politicas|empresa|membresia|admin)/.test(location.hash)){location.replace('/app'+location.search+location.hash);return;}var q=new URLSearchParams(location.search);if(q.get('invita'))location.replace('/app?invita='+encodeURIComponent(q.get('invita'))+'#registro');})();
+(function(){if(location.hash&&!/^#(como|funciones|reglas|planes)?$/.test(location.hash)){location.replace('/app'+location.search+location.hash);return;}var q=new URLSearchParams(location.search);if(q.get('invita'))location.replace('/app?invita='+encodeURIComponent(q.get('invita'))+'#registro');})();
 document.getElementById('y').textContent=new Date().getFullYear();
 fetch('/api/plans').then(function(r){return r.json()}).then(function(p){document.querySelectorAll('[data-p]').forEach(function(el){var x=p[el.dataset.p];if(x)el.firstChild.textContent=x.price+' € ';});}).catch(function(){});
 </script>
