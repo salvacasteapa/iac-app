@@ -38,7 +38,7 @@ async function viewCatalogo() {
     <div class="btns" style="margin:0"><a class="btn" href="#escaparate/${ME.company.id}">Ver mi escaparate</a><a class="btn p" href="#producto/nuevo">+ Nuevo artículo</a></div></div>
     ${prods.length ? cats.map(cat => `<h3 class="cat">${h(cat)}</h3><div class="pgrid">${prods.filter(p => (p.category || 'Sin categoría') === cat).map(p => `
       <a class="pcard" href="#producto/${p.id}"><div class="pimg">${cover(p) ? `<img src="${h(cover(p))}" alt="" loading="lazy">` : noPhoto}${p.video ? '<span class="vtag">▶ Vídeo</span>' : ''}<span class="ptag">${p.photos.length}/${MAX_PHOTOS} fotos</span></div>
-        <div class="pbody"><b>${h(p.name)}</b><div class="muted">${p.sku ? h(p.sku) + ' · ' : ''}stock ${p.stock} · ${p.lead_days} días</div>
+        <div class="pbody"><b>${h(p.name)}</b><div class="muted">${p.sku ? `<code class="k">${h(p.sku)}</code> · ` : '<span class="pill no">Sin código</span> · '}stock ${p.stock} · ${p.lead_days} días</div>
         <div class="prow"><span class="price">${eur(p.list_price)}<small> /${h(p.unit)}</small></span><span class="muted">mín. ${eur(p.min_price)}</span></div>
         ${p.certs.length ? `<div class="certs">${p.certs.slice(0, 3).map(c => `<span class="cert">${h(c.name)}</span>`).join('')}</div>` : ''}</div></a>`).join('')}</div>`).join('')
       : `<div class="card empty"><h2>Aún no tienes artículos</h2><p class="muted">Añade tu primer artículo con fotos, vídeo y certificados.</p><a class="btn p" href="#producto/nuevo">+ Nuevo artículo</a></div>`}`;
@@ -81,7 +81,9 @@ async function viewProducto(id) {
       <div class="card"><h2>Certificados de este artículo</h2>${certs.length ? certs.map(c => `<label class="chk"><input type="checkbox" name="cert" value="${c.id}" ${p.cert_ids.includes(c.id) ? 'checked' : ''}><span>${h(c.name)}${c.issuer ? `<small>${h(c.issuer)}${c.expires ? ' · válido hasta ' + h(c.expires) : ''}</small>` : ''}</span></label>`).join('') : '<p class="muted">Aún no tienes certificados. Súbelos en <a href="#certificados">Certificados</a> y luego márcalos aquí.</p>'}</div></div>
     <div><div class="card"><h2>Datos</h2>
       <label>Nombre</label><input name="name" value="${h(p.name)}" required>
-      <div class="row"><div><label>Referencia</label><input name="sku" value="${h(p.sku)}"></div><div><label>Categoría</label><input name="category" value="${h(p.category)}" list="cats"></div></div>
+      <div class="row"><div><label>Código del fabricante *</label><input name="sku" value="${h(p.sku)}" required placeholder="Ej.: TOR-M8-A2" style="font-family:ui-monospace,monospace;font-weight:600"></div><div><label>EAN / código de barras</label><input name="ean" value="${h(p.ean)}" inputmode="numeric" placeholder="Opcional"></div></div>
+      <p class="hint" style="margin:6px 0 0">El código del fabricante identifica el artículo aunque cambies el nombre o la descripción. Tus clientes lo vinculan con su propio código en «Códigos de artículo».</p>
+      <label>Categoría</label><input name="category" value="${h(p.category)}" list="cats">
       <label>Descripción</label><textarea name="description" rows="5" placeholder="Medidas, materiales, usos, ventajas…">${h(p.description)}</textarea>
       <h3>Precios y stock</h3>
       <div class="row"><div><label>Precio de lista (€)</label><input name="list_price" type="number" step="0.01" value="${p.list_price ?? ''}" required></div><div><label>Precio mínimo (€)</label><input name="min_price" type="number" step="0.01" value="${p.min_price ?? ''}" required></div><div><label>Coste (€)</label><input name="cost" type="number" step="0.01" value="${p.cost ?? ''}"></div></div>
@@ -187,7 +189,7 @@ function openModal(html) {
 function productModal(p) {
   return openModal(`<div class="mgrid"><div>${p.photos.length ? `<img class="bigimg" src="${h(p.photos[0].url)}" alt="">${p.photos.length > 1 ? `<div class="thumbs">${p.photos.map((x, i) => `<img src="${h(x.url)}" class="${i ? '' : 'on'}" alt="">`).join('')}</div>` : ''}` : noPhoto}
     ${p.video ? `<video src="${h(p.video.url)}" controls preload="metadata" class="mvideo"></video>` : ''}</div>
-    <div><h2 style="font-size:22px">${h(p.name)}</h2>${p.category ? `<div class="muted">${h(p.category)}${p.sku ? ' · Ref. ' + h(p.sku) : ''}</div>` : ''}
+    <div><h2 style="font-size:22px">${h(p.name)}</h2><div class="muted">${p.sku ? `Cód. fabricante <code class="k">${h(p.sku)}</code>` : ''}${p.ean ? ` · EAN ${h(p.ean)}` : ''}${p.category ? ' · ' + h(p.category) : ''}</div>
     <div class="price big">${eur(p.list_price)}<small> /${h(p.unit)}</small></div>
     <table>${p.stock != null ? `<tr><td>Stock</td><td class="n">${p.stock} ${h(p.unit)}</td></tr>` : ''}${p.lead_days != null ? `<tr><td>Plazo de entrega</td><td class="n">${p.lead_days} días</td></tr>` : ''}${p.cost != null ? `<tr><td>Coste (libro abierto)</td><td class="n">${eur(p.cost)}</td></tr>` : ''}</table>
     ${p.description ? `<p style="white-space:pre-wrap">${h(p.description)}</p>` : ''}
@@ -208,4 +210,41 @@ async function viewEscaparate(companyId) {
   const s = await api('/showcase/' + companyId);
   $('#c').innerHTML = (companyId === ME.company.id ? '<div class="banner info">Así ven tu escaparate tus clientes conectados. <a href="#catalogo">Volver al catálogo</a></div>' : '<p><a href="#comprar">← Nueva compra</a></p>') + showcaseHTML(s);
   bindShowcase($('#c'), s);
+}
+
+// ---------------- códigos de artículo (doble código) ----------------
+async function viewCodigos() {
+  await shell('codigos', '<div id="c"></div>');
+  const [links, conns] = await Promise.all([api('/codes'), api('/connections')]);
+  const active = conns.filter(c => c.status === 'activa');
+  const asBuyer = isBuyer() && active.some(c => c.as === 'comprador'), asSeller = isSeller() && active.some(c => c.as === 'vendedor');
+  const [cat, prods] = await Promise.all([asBuyer ? api('/catalog') : [], asSeller ? api('/products') : []]);
+  const ST = { confirmado: ['✔ Confirmado por los dos', 'ok'], falta_proveedor: ['Falta el proveedor', 'wait'], falta_cliente: ['Falta el cliente', 'wait'], cambiado: ['El fabricante cambió su código', 'no'], roto: ['Artículo retirado', 'no'] };
+  const row = l => `<tr><td><code class="k">${h(l.mfr_code)}</code>${l.state === 'cambiado' ? ` → <code class="k">${h(l.product?.current_code)}</code>` : ''}</td><td><code class="k">${h(l.buyer_code)}</code></td>
+     <td>${h(l.product?.name || '—')}${l.buyer_desc ? `<div class="muted">Cliente lo llama: ${h(l.buyer_desc)}</div>` : ''}</td><td>${h(l.as === 'comprador' ? l.seller.name : l.buyer.name)}</td>
+     <td><span class="pill ${ST[l.state][1]}">${ST[l.state][0]}</span></td>
+     <td style="white-space:nowrap">${l.can_confirm ? `<button class="ok" data-ok="${l.id}" data-m="${h(l.product?.current_code)}">Confirmar</button> ` : ''}<button class="danger" data-rm="${l.id}">Quitar</button></td></tr>`;
+  const pend = links.filter(l => l.can_confirm), rest = links.filter(l => !l.can_confirm);
+  $('#c').innerHTML = `<h1>Códigos de artículo</h1><p class="lead">Cada artículo lleva dos códigos: el del fabricante y el del cliente. Una empresa propone la pareja y la otra la confirma. Solo con las dos confirmaciones el agente puede pedir o vender por código, y los dos códigos salen en el pedido. La descripción puede cambiar sin que se rompa nada; si el fabricante cambia su código, el cliente tiene que volver a confirmar.</p>
+   ${pend.length ? `<div class="card" style="border-color:var(--warn)"><h2>Pendientes de tu confirmación (${pend.length})</h2><p class="hint">Comprueba que los dos códigos son exactamente el mismo artículo antes de confirmar.</p><div style="overflow-x:auto"><table><tr><th>Cód. fabricante</th><th>Cód. cliente</th><th>Artículo</th><th>Con</th><th>Estado</th><th></th></tr>${pend.map(row).join('')}</table></div></div>` : ''}
+   <div class="card" style="max-width:760px"><h2>Vincular un código</h2>
+     ${asBuyer || asSeller ? `<form id="f">
+       ${asSeller && asBuyer ? `<div class="seg" style="margin:4px 0 8px"><button type="button" data-mode="c" class="on">Como cliente</button><button type="button" data-mode="v">Como proveedor</button></div>` : ''}
+       <div id="mc" class="${asBuyer ? '' : 'hidden'}"><label>Artículo del proveedor</label><select name="product_c">${cat.filter(p => p.sku && !p.my_code).map(p => `<option value="${p.id}">${h(p.sku)} · ${h(p.name)} · ${h(p.seller)}</option>`).join('')}</select></div>
+       <div id="mv" class="${!asBuyer ? '' : 'hidden'}"><label>Cliente</label><select name="buyer_id">${active.filter(c => c.as === 'vendedor').map(c => `<option value="${c.other.id}">${h(c.other.name)}</option>`).join('')}</select>
+         <label>Tu artículo</label><select name="product_v">${prods.filter(p => p.sku).map(p => `<option value="${p.id}">${h(p.sku)} · ${h(p.name)}</option>`).join('')}</select></div>
+       <div class="row"><div><label id="lcode">${asBuyer ? 'Tu código para este artículo' : 'Código que usa el cliente'}</label><input name="buyer_code" required style="font-family:ui-monospace,monospace;font-weight:600"></div><div><label>Descripción del cliente <span class="muted">(opcional)</span></label><input name="buyer_desc"></div></div>
+       <div class="btns"><button class="p">Proponer vínculo</button></div><div class="err" id="err"></div></form>
+       <p class="muted">Solo aparecen artículos con código del fabricante. Los espacios no cuentan y las mayúsculas y minúsculas se tratan igual.</p>`
+     : '<p class="muted">Necesitas al menos una conexión activa con un cliente o un proveedor.</p>'}</div>
+   <div class="card"><h2>Todos los vínculos</h2>${rest.length ? `<div style="overflow-x:auto"><table><tr><th>Cód. fabricante</th><th>Cód. cliente</th><th>Artículo</th><th>Con</th><th>Estado</th><th></th></tr>${rest.map(row).join('')}</table></div>` : '<p class="muted">Aún no hay ninguno.</p>'}</div>`;
+  let mode = asBuyer ? 'c' : 'v';
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b)); $('#mc').classList.toggle('hidden', mode !== 'c'); $('#mv').classList.toggle('hidden', mode !== 'v'); $('#lcode').textContent = mode === 'c' ? 'Tu código para este artículo' : 'Código que usa el cliente'; });
+  const f = $('#f'); if (f) f.onsubmit = async e => {
+    e.preventDefault(); const d = Object.fromEntries(new FormData(f));
+    const body = { product_id: mode === 'c' ? d.product_c : d.product_v, buyer_id: d.buyer_id, buyer_code: d.buyer_code, buyer_desc: d.buyer_desc };
+    try { await api('/codes', { body }); toast('Vínculo propuesto: falta que lo confirme la otra empresa'); render(); } catch (x) { $('#err').textContent = x.message; }
+  };
+  document.querySelectorAll('[data-ok]').forEach(b => b.onclick = async () => { try { await api(`/codes/${b.dataset.ok}/confirmar`, { body: { mfr_code: b.dataset.m } }); toast('Confirmado'); render(); } catch (e) { toast(e.message); } });
+  document.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => { if (!confirm('¿Quitar este vínculo? Habrá que volver a confirmarlo.')) return; await api('/codes/' + b.dataset.rm, { method: 'DELETE' }); render(); });
 }

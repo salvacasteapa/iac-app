@@ -8,7 +8,7 @@ const jar = () => { let c = ''; return async (p, body, method) => { const r = aw
   const S = jar(), B = jar();
   await S('/signup', { company: 'Suministros Casteapa', role: 'vendedor', name: 'Salvador', email: 's@x.es', password: 'secreto123' });
   const sMe = await S('/me');
-  await S('/products', { name: 'Tornillo inox M8', list_price: 6.8, min_price: 5.2, cost: 4.5, stock: 1200, lead_days: 3 });
+  await S('/products', { sku: 'tor-m8 a2', ean: '8412345678905', name: 'Tornillo inox M8', list_price: 6.8, min_price: 5.2, cost: 4.5, stock: 1200, lead_days: 3 });
   await B('/signup', { company: 'Industrias Norte', role: 'comprador', name: 'Ana', email: 'a@x.es', password: 'secreto123', invite: sMe.company.code });
   let conns = await B('/connections'); console.log('conexión', conns[0].status, 'con', conns[0].other.name);
   await B(`/connections/${conns[0].id}/status`, { status: 'activa' });
@@ -75,5 +75,37 @@ const jar = () => { let c = ''; return async (p, body, method) => { const r = aw
   const X = jar(); await X('/signup', { company: 'Otra SA', role: 'comprador', name: 'X', email: 'x@x.es', password: 'secreto123' });
   await assert.rejects(X('/showcase/' + sMe.company.id));
   console.log('catálogo completo OK: fotos', pr.photos.length, 'vídeo', !!pr.video, 'certificado', cert.name, 'proyecto', pj.id);
+  // Doble código: fabricante + cliente, confirmado por las dos empresas
+  await assert.rejects(S('/products', { name: 'Sin código', list_price: 2, min_price: 1 }), /código del fabricante/);
+  await assert.rejects(S('/products', { sku: 'TOR-M8A2', name: 'Duplicado', list_price: 2, min_price: 1 }), /Ya tienes otro/);
+  await assert.rejects(S('/products', { sku: 'X1', ean: '8412345678901', name: 'EAN malo', list_price: 2, min_price: 1 }), /EAN/);
+  const tor = (await S('/products')).find(p => p.name === 'Tornillo inox M8'); assert.equal(tor.sku, 'TOR-M8A2');
+  const lk = await B('/codes', { product_id: tor.id, buyer_code: 'nor-4471', buyer_desc: 'Tornillo M8 inoxidable' });
+  assert.equal(lk.state, 'falta_proveedor');
+  await assert.rejects(B('/needs', { buyer_code: 'NOR-4471', qty: 10, target_price: 6, max_price: 6.8, max_days: 5 }), /no está vinculado/);
+  await assert.rejects(B('/codes', { product_id: prods.find(p => p.id !== tor.id)?.id || tor.id, buyer_code: 'NOR4471' }));
+  let pend = (await S('/codes')).find(l => l.id === lk.id); assert.ok(pend.can_confirm);
+  assert.ok((await S('/stats')).codigos >= 1);
+  await S(`/codes/${lk.id}/confirmar`, { mfr_code: pend.product.current_code });
+  assert.equal((await B('/codes'))[0].state, 'confirmado');
+  const nc = await B('/needs', { buyer_code: ' nor-4471 ', qty: 10, target_price: 6.5, max_price: 6.8, max_days: 5 });
+  const dc = (await B('/deals')).find(x => x.need?.id === nc.id && x.chosen);
+  const dv = await B('/deals/' + dc.id);
+  assert.equal(dv.mfr_code, 'TOR-M8A2'); assert.equal(dv.buyer_code, 'NOR-4471'); assert.ok(dv.verified);
+  // la descripción cambia: el vínculo sigue valiendo
+  await S('/products/' + tor.id, { ...(await S('/products/' + tor.id)), name: 'Tornillo inoxidable M8 (nuevo envase)' }, 'PUT');
+  assert.equal((await B('/codes'))[0].state, 'confirmado');
+  // el fabricante cambia su código: hay que reconfirmar y no se puede pedir hasta entonces
+  await S('/products/' + tor.id, { ...(await S('/products/' + tor.id)), sku: 'TOR-M8-A2-V2' }, 'PUT');
+  assert.equal((await B('/codes'))[0].state, 'cambiado');
+  await assert.rejects(B('/needs', { buyer_code: 'NOR-4471', qty: 10, target_price: 6, max_price: 6.8, max_days: 5 }), /no está vinculado/);
+  await assert.rejects(B(`/codes/${lk.id}/confirmar`, { mfr_code: 'TOR-M8A2' }), /ha cambiado/);
+  await B(`/codes/${lk.id}/confirmar`, { mfr_code: 'TOR-M8-A2-V2' });
+  assert.equal((await B('/codes'))[0].state, 'confirmado');
+  // externos: la otra parte da su código y confirma
+  const e3 = await S('/ext', { side: 'venta', product_id: tor.id, qty: 5, cp_company: 'Talleres Este' });
+  let v3 = await pub(e3.token); assert.equal(v3.mfr_code, 'TOR-M8-A2-V2'); assert.equal(v3.cp_code_ok, false);
+  v3 = await pub(e3.token, { action: 'codigos', code: 'te-99' }); assert.equal(v3.buyer_code, 'TE-99'); assert.ok(v3.cp_code_ok);
+  console.log('doble código OK:', dv.mfr_code, '=', dv.buyer_code);
   srv.close();
 })().catch(e => { console.error('FALLO', e); srv.close(); process.exit(1); });

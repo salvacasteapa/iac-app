@@ -21,7 +21,7 @@ aside .me{font-size:13px;color:#8a96b4;padding:14px 12px 4px;border-top:1px soli
 aside .me b{display:block;color:#fff;font-weight:600}
 aside .me a{color:#9fb6ff}
 .badge{background:#ff5a4e;color:#fff;border-radius:99px;font-size:11.5px;padding:1px 8px;font-weight:700}
-main{padding:34px 40px 60px;max-width:1220px;width:100%}
+main{padding:34px 40px 60px;max-width:1220px;width:100%;min-width:0}
 h1{font-size:28px;letter-spacing:-.025em;line-height:1.15;margin:0 0 6px;font-weight:800}
 .lead{color:var(--quiet);margin:0 0 26px;font-size:15.5px;max-width:760px}
 h2{font-size:17px;letter-spacing:-.01em;margin:0 0 6px;font-weight:700}
@@ -79,7 +79,7 @@ td input,td select{padding:7px 9px}
 .banner.info{background:color-mix(in srgb,var(--brand) 8%,#fff);border-color:color-mix(in srgb,var(--brand) 20%,transparent)}
 .banner.warn{background:var(--warn-t);border-color:#f6dfae}.banner.bad{background:var(--bad-t);border-color:#f6c9c4}.banner.ok{background:var(--ok-t);border-color:#bfe8d6}
 .muted{color:var(--quiet);font-size:13.5px}
-code.k{background:#eef0f5;padding:4px 10px;border-radius:8px;font-weight:700;letter-spacing:.05em;font-size:13.5px}
+code.k{white-space:nowrap;background:#eef0f5;padding:4px 10px;border-radius:8px;font-weight:700;letter-spacing:.05em;font-size:13.5px}
 ol{padding-left:20px}ol li{margin:6px 0}
 
 /* ---------- conversación ---------- */

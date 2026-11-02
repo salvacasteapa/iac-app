@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { db, one, all, run, now, getPolicy } = require('./db');
+const { norm, gtinOk } = require('./codes');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
@@ -86,24 +87,26 @@ function register(app, { auth, active, bad, str, num, sellerOnly, publicCompany,
     const video = b.video && ownMedia(cid, b.video, 'video') ? String(b.video) : null;
     const certs = (Array.isArray(b.certs) ? b.certs : []).map(Number).filter(id => one('SELECT id FROM certificates WHERE id=? AND company_id=?', id, cid));
     return {
-      sku: str(b.sku, 60), name: str(b.name, 160), unit: str(b.unit, 20) || 'ud', category: str(b.category, 80), description: str(b.description, 4000),
+      sku: norm(b.sku), ean: String(b.ean ?? '').replace(/\D/g, '').slice(0, 14) || null, name: str(b.name, 160), unit: str(b.unit, 20) || 'ud', category: str(b.category, 80), description: str(b.description, 4000),
       list_price: num(b.list_price), min_price: num(b.min_price), cost: num(b.cost) ?? 0, stock: Math.floor(num(b.stock) ?? 0), lead_days: Math.floor(num(b.lead_days) ?? 3),
       photos: JSON.stringify(photos), video, certs: JSON.stringify(certs)
     };
   };
-  const invalid = p => !p.name ? 'Pon el nombre del artículo' : (p.list_price === null || p.min_price === null) ? 'Pon el precio de lista y el precio mínimo' : p.min_price > p.list_price ? 'El precio mínimo no puede ser mayor que el de lista' : null;
+  const invalid = (p, cid, id = 0) => !p.name ? 'Pon el nombre del artículo' : !p.sku ? 'Pon el código del fabricante: es el que identifica el artículo sin lugar a error' :
+    all('SELECT sku FROM products WHERE company_id=? AND active=1 AND id<>?', cid, id).some(x => norm(x.sku) === p.sku) ? `Ya tienes otro artículo con el código ${p.sku}` :
+    p.ean && !gtinOk(p.ean) ? 'El EAN no es válido (revisa las cifras: el dígito de control no cuadra)' : (p.list_price === null || p.min_price === null) ? 'Pon el precio de lista y el precio mínimo' : p.min_price > p.list_price ? 'El precio mínimo no puede ser mayor que el de lista' : null;
   app.get('/api/products', auth, sellerOnly, (req, res) => res.json(all('SELECT * FROM products WHERE company_id=? AND active=1 ORDER BY category, name', req.company.id).map(p => productView(p))));
   app.get('/api/products/:id', auth, sellerOnly, (req, res) => { const p = one('SELECT * FROM products WHERE id=? AND company_id=? AND active=1', +req.params.id, req.company.id); p ? res.json(productView(p)) : bad(res, 'No encontrado', 404); });
   app.post('/api/products', auth, active, sellerOnly, (req, res) => {
-    const p = productIn(req.body || {}, req.company.id), e = invalid(p); if (e) return bad(res, e);
-    const r = run(`INSERT INTO products (company_id, sku, name, unit, category, description, list_price, min_price, cost, stock, lead_days, photos, video, certs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      req.company.id, p.sku, p.name, p.unit, p.category, p.description, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, p.photos, p.video, p.certs);
+    const p = productIn(req.body || {}, req.company.id), e = invalid(p, req.company.id); if (e) return bad(res, e);
+    const r = run(`INSERT INTO products (company_id, sku, ean, name, unit, category, description, list_price, min_price, cost, stock, lead_days, photos, video, certs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      req.company.id, p.sku, p.ean, p.name, p.unit, p.category, p.description, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, p.photos, p.video, p.certs);
     res.json({ ok: true, id: Number(r.lastInsertRowid) });
   });
   app.put('/api/products/:id', auth, active, sellerOnly, (req, res) => {
-    const p = productIn(req.body || {}, req.company.id), e = invalid(p); if (e) return bad(res, e);
-    run(`UPDATE products SET sku=?, name=?, unit=?, category=?, description=?, list_price=?, min_price=?, cost=?, stock=?, lead_days=?, photos=?, video=?, certs=? WHERE id=? AND company_id=?`,
-      p.sku, p.name, p.unit, p.category, p.description, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, p.photos, p.video, p.certs, +req.params.id, req.company.id);
+    const p = productIn(req.body || {}, req.company.id), e = invalid(p, req.company.id, +req.params.id); if (e) return bad(res, e);
+    run(`UPDATE products SET sku=?, ean=?, name=?, unit=?, category=?, description=?, list_price=?, min_price=?, cost=?, stock=?, lead_days=?, photos=?, video=?, certs=? WHERE id=? AND company_id=?`,
+      p.sku, p.ean, p.name, p.unit, p.category, p.description, p.list_price, p.min_price, p.cost, p.stock, p.lead_days, p.photos, p.video, p.certs, +req.params.id, req.company.id);
     res.json({ ok: true, id: +req.params.id });
   });
 

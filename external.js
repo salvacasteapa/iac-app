@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS ext_negotiations (
   created INTEGER NOT NULL, updated INTEGER NOT NULL, closed INTEGER
 );`);
 
+{ const have = all('PRAGMA table_info(ext_negotiations)').map(c => c.name);
+  for (const [c, t] of [['mfr_code', 'TEXT'], ['buyer_code', 'TEXT'], ['cp_code_ok', 'INTEGER DEFAULT 0']]) if (!have.includes(c)) db.exec(`ALTER TABLE ext_negotiations ADD COLUMN ${c} ${t}`); }
+const { norm } = require('./codes');
+
 const RATE = { duro: 0.15, equilibrado: 0.28, flexible: 0.45 };
 const MAX_ROUNDS = 6;
 const r2 = n => Math.round(n * 100) / 100;
@@ -173,12 +177,14 @@ function register(app, { auth, active, bad, str, num, publicCompany, sellerSide,
     if (side === 'compra' && !buyerSide(c)) return bad(res, 'Tu empresa no tiene activado el lado de compras');
     const qty = Math.floor(num(b.qty, 1) ?? 0), days = Math.floor(num(b.days) ?? 0) || null;
     let product_name = str(b.product_name, 160), unit = str(b.unit, 20) || 'ud', open, limit, list = null, product_id = null;
+    let mfr_code = norm(b.mfr_code) || null, buyer_code = norm(b.buyer_code) || null;
     if (side === 'venta') {
       const p = one('SELECT * FROM products WHERE id=? AND company_id=? AND active=1', +b.product_id, c.id);
       if (!p) return bad(res, 'Elige un producto de tu catálogo');
       if (qty > p.stock) return bad(res, `Solo tienes ${p.stock} en stock`);
       const pol = getPolicy(c.id, 'venta');
       const floor = Math.max(p.min_price, p.cost > 0 ? p.cost * (1 + pol.margen_min_pct / 100) : 0);
+      mfr_code = norm(p.sku) || null; buyer_code = norm(b.buyer_code) || null;
       product_id = p.id; product_name = p.name; unit = p.unit || 'ud'; list = p.list_price;
       open = num(b.open_price) ?? p.list_price; limit = r2(Math.max(floor, num(b.limit_price) ?? floor));
       if (open < limit) return bad(res, 'El precio de salida no puede ser menor que tu mínimo');
@@ -194,8 +200,8 @@ function register(app, { auth, active, bad, str, num, publicCompany, sellerSide,
       ? `Buenos días${cp_name ? ' ' + cp_name : ''}. Soy el asistente de compras de ${c.name}. Necesitamos ${qty} ${unit} de ${product_name}${days ? ` con entrega en ${days} días como máximo` : ''}. Nuestra propuesta es ${eur(open)} por ${unit}. ¿Qué precio nos puede ofrecer?`
       : `Buenos días${cp_name ? ' ' + cp_name : ''}. Soy el asistente comercial de ${c.name}. Le propongo ${qty} ${unit} de ${product_name} a ${eur(open)} por ${unit}${days ? `, con entrega en ${days} días` : ''}. ¿Le encaja o prefiere que lo ajustemos?`;
     const msgs = JSON.stringify([{ who: 'agent', text: first, ts: now() }]);
-    const r = run(`INSERT INTO ext_negotiations (company_id, side, token, supervisor, cp_name, cp_company, cp_email, product_id, product_name, unit, qty, days, open_price, limit_price, list_price, our_offer, status, messages, created, updated)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, c.id, side, token, supervisor, cp_name, cp_company, str(b.cp_email, 160), product_id, product_name, unit, qty, days, open, limit, list, open, 'abierta', msgs, now(), now());
+    const r = run(`INSERT INTO ext_negotiations (company_id, side, token, supervisor, cp_name, cp_company, cp_email, mfr_code, buyer_code, product_id, product_name, unit, qty, days, open_price, limit_price, list_price, our_offer, status, messages, created, updated)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, c.id, side, token, supervisor, cp_name, cp_company, str(b.cp_email, 160), mfr_code, buyer_code, product_id, product_name, unit, qty, days, open, limit, list, open, 'abierta', msgs, now(), now());
     res.json({ id: Number(r.lastInsertRowid), token });
   });
   // Un miembro del equipo escribe en la conversación (el asistente queda en pausa)
@@ -231,6 +237,7 @@ function register(app, { auth, active, bad, str, num, publicCompany, sellerSide,
     const c = one('SELECT * FROM companies WHERE id=?', n.company_id);
     return {
       company: publicCompany(c), side: n.side, supervisor: n.supervisor, cp_name: n.cp_name, product_name: n.product_name, unit: n.unit, qty: n.qty, days: n.days,
+      mfr_code: n.mfr_code, buyer_code: n.buyer_code, cp_code_ok: !!n.cp_code_ok,
       our_offer: n.our_offer, price: n.price, total: n.total, status: n.status, agent_paused: !!n.agent_paused,
       messages: JSON.parse(n.messages || '[]').filter(m => m.who !== 'sys').map(m => ({ who: m.who === 'human' ? 'you' : m.who, text: m.text, ts: m.ts }))
     };
@@ -246,6 +253,17 @@ function register(app, { auth, active, bad, str, num, publicCompany, sellerSide,
     const company = one('SELECT * FROM companies WHERE id=?', n.company_id);
     if (['cerrada', 'cancelada'].includes(n.status)) return bad(res, 'Esta negociación ya está cerrada');
     const action = req.body?.action;
+    if (action === 'codigos') { // la otra parte pone su código y confirma que los dos son el mismo artículo
+      const code = norm(req.body?.code);
+      const theirs = n.side === 'venta' ? 'buyer_code' : 'mfr_code';
+      if (!n[theirs] && !code) return bad(res, 'Escriba su código de artículo');
+      if (code && n[theirs] && n[theirs] !== code) return bad(res, `Aquí consta el código ${n[theirs]}. Si no es correcto, pida hablar con una persona.`);
+      if (code) n[theirs] = code;
+      run(`UPDATE ext_negotiations SET ${theirs}=?, cp_code_ok=1, unread=1, updated=? WHERE id=?`, n[theirs], now(), n.id);
+      const m = JSON.parse(n.messages || '[]'); m.push({ who: 'sys', text: `La otra parte confirma los códigos: fabricante ${n.mfr_code || '—'} · cliente ${n.buyer_code || '—'}.`, ts: now() });
+      run('UPDATE ext_negotiations SET messages=? WHERE id=?', JSON.stringify(m), n.id);
+      return res.json(publicView(one('SELECT * FROM ext_negotiations WHERE id=?', n.id)));
+    }
     let text = str(req.body?.text, 1500);
     if (action === 'humano') text = 'Me gustaría hablar con una persona.';
     if (action === 'aceptar') text = 'Acepto la propuesta.';
@@ -273,8 +291,8 @@ function register(app, { auth, active, bad, str, num, publicCompany, sellerSide,
     res.send(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Pedido E-${n.id}</title><style>body{font:14px/1.5 system-ui,sans-serif;color:#1d2330;max-width:820px;margin:30px auto;padding:0 24px}.top{display:flex;justify-content:space-between;border-bottom:4px solid ${e(c.color)};padding-bottom:14px}.top img{max-height:64px}h1{margin:0;font-size:22px;color:${e(c.color)}}.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0}.lh{border-left:4px solid;padding-left:12px}.lh img{max-height:36px;display:block;margin-bottom:6px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #dde1e7;text-align:left}.n{text-align:right}.tot{font-size:18px;font-weight:700;text-align:right;margin-top:12px}@media print{button{display:none}}</style></head><body>
     <div class="top"><div>${c.logo ? `<img src="${e(c.logo)}">` : `<h1>${e(c.name)}</h1>`}</div><div style="text-align:right"><h1>Pedido E-${n.id}</h1>${new Date(n.closed).toLocaleDateString('es-ES')}</div></div>
     <div class="cols"><div><small>${n.side === 'venta' ? 'PROVEEDOR' : 'CLIENTE'}</small>${us}</div><div><small>${n.side === 'venta' ? 'CLIENTE' : 'PROVEEDOR'}</small>${them}</div></div>
-    <table><tr><th>Producto</th><th class="n">Cantidad</th><th class="n">Precio</th><th class="n">Importe</th></tr><tr><td>${e(n.product_name)}</td><td class="n">${n.qty} ${e(n.unit)}</td><td class="n">${eur(n.price)}</td><td class="n">${eur(n.total)}</td></tr></table>
-    <div class="tot">Total (sin impuestos): ${eur(n.total)}</div>${n.days ? `<p>Plazo de entrega: ${n.days} días.</p>` : ''}<button onclick="print()">Imprimir o guardar en PDF</button></body></html>`);
+    <table><tr><th>Cód. fabricante</th><th>Cód. cliente</th><th>Producto</th><th class="n">Cantidad</th><th class="n">Precio</th><th class="n">Importe</th></tr><tr><td><b>${e(n.mfr_code || '—')}</b></td><td><b>${e(n.buyer_code || '—')}</b></td><td>${e(n.product_name)}</td><td class="n">${n.qty} ${e(n.unit)}</td><td class="n">${eur(n.price)}</td><td class="n">${eur(n.total)}</td></tr></table>
+    <div class="tot">Total (sin impuestos): ${eur(n.total)}</div>${n.days ? `<p>Plazo de entrega: ${n.days} días.</p>` : ''}<p>${n.cp_code_ok ? '✔ Códigos de artículo confirmados por la otra parte.' : 'Códigos de artículo no confirmados por la otra parte.'}</p><button onclick="print()">Imprimir o guardar en PDF</button></body></html>`);
   });
 }
 

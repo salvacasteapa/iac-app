@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { one, all, run, now, getPolicy, setPolicy } = require('./db');
 const { negotiate, scoreOffers, approvals } = require('./negotiation');
+const codes = require('./codes');
 
 const PORT = +process.env.PORT || 8080;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -253,7 +254,8 @@ app.get('/api/catalog', auth, buyerOnly, (req, res) => {
   res.json(rows.filter(p => getPolicy(p.seller_id, 'venta').mostrar.catalogo).map(p => {
     const m = getPolicy(p.seller_id, 'venta').mostrar;
     const ph = (() => { try { return JSON.parse(p.photos || '[]')[0]; } catch { return null; } })();
-    return { id: p.id, seller_id: p.seller_id, photo: ph ? `/media/${ph}` : null, category: p.category, name: p.name, unit: p.unit, seller: p.seller_name, list_price: p.list_price, stock: m.stock ? p.stock : null, lead_days: m.plazo ? p.lead_days : null, cost: m.costes ? p.cost : null };
+    const lk = codes.verifiedForProduct(req.company.id, p);
+    return { id: p.id, sku: p.sku, ean: p.ean, my_code: lk ? lk.buyer_code : null, seller_id: p.seller_id, photo: ph ? `/media/${ph}` : null, category: p.category, name: p.name, unit: p.unit, seller: p.seller_name, list_price: p.list_price, stock: m.stock ? p.stock : null, lead_days: m.plazo ? p.lead_days : null, cost: m.costes ? p.cost : null };
   }));
 });
 
@@ -262,31 +264,41 @@ app.get('/api/needs', auth, buyerOnly, (req, res) => res.json(all('SELECT * FROM
 app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
   const b = req.body || {};
   const need = {
-    product_name: str(b.product_name, 160), qty: Math.floor(num(b.qty, 1) ?? 0), target_price: num(b.target_price), max_price: num(b.max_price),
+    buyer_code: codes.norm(b.buyer_code) || null, product_name: str(b.product_name, 160), qty: Math.floor(num(b.qty, 1) ?? 0), target_price: num(b.target_price), max_price: num(b.max_price),
     max_days: Math.floor(num(b.max_days, 0) ?? 0), consumption: Math.floor(num(b.consumption) ?? 0) || null, forecast: Math.floor(num(b.forecast) ?? 0) || null, buyer_stock: Math.floor(num(b.buyer_stock) ?? 0) || null
   };
+  // Con código del comprador: solo vínculos confirmados por las dos empresas. Sin margen de error.
+  let byCode = null;
+  if (need.buyer_code) {
+    byCode = codes.verifiedByBuyerCode(req.company.id, need.buyer_code);
+    if (!byCode.length) return bad(res, `Tu código ${need.buyer_code} no está vinculado y confirmado con ningún proveedor conectado. Vincúlalo en «Códigos de artículo».`);
+    if (!need.product_name) need.product_name = byCode[0].link.buyer_desc || byCode[0].product.name;
+  }
   if (!need.product_name || !need.qty || need.target_price === null || need.max_price === null || need.max_price < need.target_price || !need.max_days)
     return bad(res, 'Producto, cantidad, plazo, precio objetivo y precio máximo (mayor o igual que el objetivo)');
   const buyer = req.company, bp = getPolicy(buyer.id, 'compra');
-  const nid = Number(run(`INSERT INTO needs (buyer_id, product_name, qty, target_price, max_price, max_days, consumption, forecast, buyer_stock, status, created)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, buyer.id, need.product_name, need.qty, need.target_price, need.max_price, need.max_days, need.consumption, need.forecast, need.buyer_stock, 'abierta', now()).lastInsertRowid);
+  const nid = Number(run(`INSERT INTO needs (buyer_id, buyer_code, product_name, qty, target_price, max_price, max_days, consumption, forecast, buyer_stock, status, created)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, buyer.id, need.buyer_code, need.product_name, need.qty, need.target_price, need.max_price, need.max_days, need.consumption, need.forecast, need.buyer_stock, 'abierta', now()).lastInsertRowid);
 
   // Lo que el comprador comparte con los proveedores
   const sharedNeed = { ...need, consumption: bp.compartir.consumo ? need.consumption : null, forecast: bp.compartir.prevision ? need.forecast : null };
-  const candidates = all(`SELECT p.*, c.name seller_name FROM products p JOIN connections k ON k.seller_id=p.company_id AND k.buyer_id=? AND k.status='activa'
-    JOIN companies c ON c.id=p.company_id WHERE p.active=1 AND lower(trim(p.name))=lower(trim(?))`, buyer.id, need.product_name)
+  const candidates = (byCode
+    ? byCode.map(x => ({ ...x.product, seller_name: one('SELECT name FROM companies WHERE id=?', x.product.company_id).name }))
+    : all(`SELECT p.*, c.name seller_name FROM products p JOIN connections k ON k.seller_id=p.company_id AND k.buyer_id=? AND k.status='activa'
+      JOIN companies c ON c.id=p.company_id WHERE p.active=1 AND lower(trim(p.name))=lower(trim(?))`, buyer.id, need.product_name))
     .filter(p => isActive(one('SELECT * FROM companies WHERE id=?', p.company_id)));
 
   const offers = [];
   for (const p of candidates) {
     const sp = getPolicy(p.company_id, 'venta');
     const r = negotiate({ product: p, need: sharedNeed, sellerPolicy: sp, buyerPolicy: bp, seller: { name: p.seller_name }, buyer: { name: buyer.name } });
-    const base = { need_id: nid, seller_id: p.company_id, buyer_id: buyer.id, product_id: p.id, log: r.log };
+    const lk = codes.verifiedForProduct(buyer.id, p);
+    const base = { need_id: nid, seller_id: p.company_id, buyer_id: buyer.id, product_id: p.id, log: r.log, mfr_code: codes.norm(p.sku) || null, buyer_code: lk ? lk.buyer_code : null, link_id: lk ? lk.id : null };
     if (r.status === 'acuerdo') {
       const pastOrders = one(`SELECT count(*) n FROM deals WHERE seller_id=? AND buyer_id=? AND status='cerrado'`, p.company_id, buyer.id).n;
       offers.push({ ...base, ...r, pastOrders, sp });
     } else {
-      run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, status, motivo, log, created) VALUES (?,?,?,?,?,?,?,?)`, nid, p.company_id, buyer.id, p.id, 'sin_acuerdo', r.motivo, JSON.stringify(r.log), now());
+      run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, motivo, log, created) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, nid, p.company_id, buyer.id, p.id, base.mfr_code, base.buyer_code, base.link_id, 'sin_acuerdo', r.motivo, JSON.stringify(r.log), now());
     }
   }
   if (!offers.length) {
@@ -301,8 +313,9 @@ app.post('/api/needs', auth, active, buyerOnly, (req, res) => {
     const status = !chosen ? 'descartada' : (ap.buyer || ap.seller) ? 'pendiente' : 'cerrado';
     if (status === 'pendiente') log.push({ who: 'sys', text: `Pendiente de aprobación: ${[ap.buyer && 'jefe de compras', ap.seller && 'jefe de ventas'].filter(Boolean).join(' y ')}.` });
     if (status === 'cerrado') log.push({ who: 'sys', text: 'Dentro de los límites de los dos gestores. Pedido cerrado automáticamente.' });
-    run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, status, price, qty, total, lead_days, partial, score, chosen, need_buyer_ok, need_seller_ok, buyer_ok, seller_ok, log, created, closed)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, nid, o.seller_id, o.buyer_id, o.product_id, status, o.price, o.qty, o.total, o.lead_days, o.partial ? 1 : 0, o.score, chosen ? 1 : 0,
+    if (o.link_id) log.unshift({ who: 'sys', text: `Artículo verificado por doble código: fabricante ${o.mfr_code} = cliente ${o.buyer_code} (confirmado por las dos empresas).` });
+    run(`INSERT INTO deals (need_id, seller_id, buyer_id, product_id, mfr_code, buyer_code, link_id, status, price, qty, total, lead_days, partial, score, chosen, need_buyer_ok, need_seller_ok, buyer_ok, seller_ok, log, created, closed)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, nid, o.seller_id, o.buyer_id, o.product_id, o.mfr_code, o.buyer_code, o.link_id, status, o.price, o.qty, o.total, o.lead_days, o.partial ? 1 : 0, o.score, chosen ? 1 : 0,
       ap.buyer ? 1 : 0, ap.seller ? 1 : 0, ap.buyer ? 0 : 1, ap.seller ? 0 : 1, JSON.stringify(log), now(), status === 'cerrado' ? now() : null);
     if (status === 'cerrado') run('UPDATE products SET stock=max(0, stock-?) WHERE id=?', o.qty, o.product_id);
   });
@@ -323,7 +336,7 @@ function dealView(d, cid) {
     needOut = { product_name: need.product_name, qty: need.qty, max_days: need.max_days, consumption: c.consumo ? need.consumption : null, forecast: c.prevision ? need.forecast : null, buyer_stock: c.stock ? need.buyer_stock : null };
   }
   return {
-    id: d.id, status: d.status, motivo: d.motivo, price: d.price, qty: d.qty, total: d.total, lead_days: d.lead_days, partial: !!d.partial, score: d.score, chosen: !!d.chosen,
+    id: d.id, status: d.status, motivo: d.motivo, mfr_code: d.mfr_code, buyer_code: d.buyer_code, verified: !!d.link_id, price: d.price, qty: d.qty, total: d.total, lead_days: d.lead_days, partial: !!d.partial, score: d.score, chosen: !!d.chosen,
     need_buyer_ok: !!d.need_buyer_ok, need_seller_ok: !!d.need_seller_ok, buyer_ok: !!d.buyer_ok, seller_ok: !!d.seller_ok,
     created: d.created, closed: d.closed, as: iAmSeller ? 'vendedor' : 'comprador',
     seller: publicCompany(seller), buyer: publicCompany(buyer), product, need: needOut,
@@ -354,6 +367,10 @@ app.post('/api/deals/:id/:action', auth, active, (req, res) => {
     return res.json({ ok: true });
   }
   if (req.params.action !== 'aprobar') return bad(res, 'Acción no válida');
+  if (d.link_id) { // el artículo tiene que seguir siendo el mismo que se negoció
+    const l = one('SELECT * FROM item_links WHERE id=?', d.link_id), p = one('SELECT * FROM products WHERE id=?', d.product_id);
+    if (!l || !codes.linkState(l, p).ok || l.mfr_code !== d.mfr_code || l.buyer_code !== d.buyer_code) return bad(res, 'Los códigos del artículo han cambiado desde la negociación. Revisa «Códigos de artículo» y vuelve a lanzar la compra.');
+  }
   const bok = isB ? 1 : d.buyer_ok, sok = isS ? 1 : d.seller_ok;
   log.push({ who: 'sys', text: `Aprobado por ${isB ? 'el jefe de compras' : 'el jefe de ventas'} (${req.user.name || req.user.email}).` });
   const done = bok && sok;
@@ -373,7 +390,9 @@ app.get('/api/stats', auth, (req, res) => {
   const requests = one(`SELECT count(*) n FROM connections WHERE buyer_id=? AND status='pendiente'`, cid).n;
   const auto = one(`SELECT count(*) n FROM deals WHERE (buyer_id=? OR seller_id=?) AND status='cerrado' AND need_buyer_ok=0 AND need_seller_ok=0`, cid, cid).n;
   const externos = one(`SELECT count(*) n FROM ext_negotiations WHERE company_id=? AND (unread=1 OR status IN ('pendiente','humano'))`, cid).n;
-  res.json({ externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
+  const codigos = all('SELECT * FROM item_links WHERE seller_id=? OR buyer_id=?', cid, cid)
+    .filter(l => { const st = codes.linkState(l, one('SELECT * FROM products WHERE id=?', l.product_id)); return st.state === 'cambiado' ? l.buyer_id === cid : !st.ok && st.state !== 'roto' && !(l.seller_id === cid ? l.seller_ok : l.buyer_ok); }).length;
+  res.json({ codigos, externos, compras: buy, ventas: sell, ahorro: savings, margen: margin, pendientes: pending, conexiones: conns, solicitudes: requests, automaticos: auto });
 });
 
 // ---------- membresía ----------
@@ -435,15 +454,17 @@ app.get('/pedido/:id', (req, res, next) => {
   @media print{button{display:none}}</style></head><body>
   <div class="top"><div>${mine.logo ? `<img src="${e(mine.logo)}" alt="">` : `<h1>${e(mine.name)}</h1>`}</div><div style="text-align:right"><h1>Pedido nº ${d.id}</h1>${new Date(d.closed).toLocaleDateString('es-ES')}</div></div>
   <div class="cols"><div><small>PROVEEDOR</small>${head(v.seller)}</div><div><small>CLIENTE</small>${head(v.buyer)}</div></div>
-  <table><tr><th>Producto</th><th class="n">Cantidad</th><th class="n">Precio</th><th class="n">Importe</th></tr>
-  <tr><td>${e(v.product?.name)} ${v.product?.sku ? `(${e(v.product.sku)})` : ''}${v.partial ? ' · entrega parcial' : ''}</td><td class="n">${v.qty} ${e(v.product?.unit)}</td><td class="n">${eur(v.price)}</td><td class="n">${eur(v.total)}</td></tr></table>
+  <table><tr><th>Cód. fabricante</th><th>Cód. cliente</th><th>Producto</th><th class="n">Cantidad</th><th class="n">Precio</th><th class="n">Importe</th></tr>
+  <tr><td><b>${e(v.mfr_code || v.product?.sku || '—')}</b></td><td><b>${e(v.buyer_code || '—')}</b></td><td>${e(v.product?.name)}${v.partial ? ' · entrega parcial' : ''}</td><td class="n">${v.qty} ${e(v.product?.unit)}</td><td class="n">${eur(v.price)}</td><td class="n">${eur(v.total)}</td></tr></table>
   <div class="tot">Total (sin impuestos): ${eur(v.total)}</div>
   <p>Plazo de entrega: ${v.lead_days} días.</p>
+  ${v.verified ? '<p>✔ Artículo verificado por doble código, confirmado por proveedor y cliente.</p>' : ''}
   <p class="small">Pedido acordado entre los agentes de compras y ventas de ambas empresas, conforme a las políticas fijadas por sus responsables.</p>
   <button onclick="print()">Imprimir o guardar en PDF</button></body></html>`);
 });
 
 // Catálogo enriquecido, certificados y proyectos
+codes.register(app, { auth, active, bad, str });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
 
 // Negociación con empresas que no tienen agente

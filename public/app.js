@@ -70,6 +70,7 @@ async function shell(active, content) {
     isSeller() && ['catalogo', 'Catálogo', 0],
     isSeller() && ['certificados', 'Certificados', 0],
     isSeller() && ['proyectos', 'Proyectos', 0],
+    ['codigos', 'Códigos de artículo', stats.codigos],
     ['conexiones', isSeller() && !isBuyer() ? 'Clientes conectados' : 'Conexiones', stats.solicitudes],
     ['politicas', 'Reglas de los agentes', 0],
     ['empresa', 'Mi empresa', 0],
@@ -140,6 +141,9 @@ async function viewOperacion(id) {
     <div class="grid" style="grid-template-columns:minmax(280px,1fr) minmax(320px,1.5fr)">
       <div>
         <div class="card"><h2>Acuerdo</h2><table>
+          <tr><td>Código del fabricante</td><td class="n"><code class="k">${h(d.mfr_code || d.product?.sku || '—')}</code></td></tr>
+          <tr><td>Código del cliente</td><td class="n">${d.buyer_code ? `<code class="k">${h(d.buyer_code)}</code>` : '—'}</td></tr>
+          <tr><td>Artículo</td><td class="n">${d.verified ? '<span class="pill ok">✔ Verificado por doble código</span>' : '<span class="pill mute">Por nombre, sin doble código</span>'}</td></tr>
           <tr><td>Cantidad</td><td class="n">${d.qty ?? '—'} ${h(d.product?.unit || '')}${d.partial ? ' (parcial)' : ''}</td></tr>
           <tr><td>Precio unitario</td><td class="n">${d.price != null ? eur(d.price) : '—'}</td></tr>
           <tr><td>Precio de lista</td><td class="n">${d.list_price != null ? eur(d.list_price) : '—'}</td></tr>
@@ -167,20 +171,32 @@ async function viewOperacion(id) {
 // ---------------- comprar ----------------
 async function viewComprar() {
   await shell('comprar', '<div id="c"></div>');
-  const [cat, needs] = await Promise.all([api('/catalog'), api('/needs')]);
+  const [cat, needs, links] = await Promise.all([api('/catalog'), api('/needs'), api('/codes')]);
   const names = [...new Set(cat.map(p => p.name))];
+  const mine = {}; links.filter(l => l.ok && l.as === 'comprador').forEach(l => { (mine[l.buyer_code] ||= []).push(l); });
   $('#c').innerHTML = `<h1>Nueva compra</h1><p class="lead">Dile a tu agente qué necesitas. Negociará con todos tus proveedores conectados y elegirá la mejor oferta según tus prioridades.</p>
    <div class="grid"><div class="card"><form id="f">
-     <label>Producto</label><input name="product_name" list="prods" required placeholder="${names.length ? 'Elige o escribe' : 'Aún no tienes proveedores conectados'}"><datalist id="prods">${names.map(n => `<option value="${h(n)}">`).join('')}</datalist>
+     <div class="row"><div><label>Tu código de artículo</label><input name="buyer_code" id="bcode" list="bcodes" placeholder="${Object.keys(mine).length ? 'Elige tu código' : 'Sin códigos vinculados'}" autocomplete="off"><datalist id="bcodes">${Object.entries(mine).map(([k, v]) => `<option value="${h(k)}">${h(v[0].buyer_desc || v[0].product.name)}</option>`).join('')}</datalist></div>
+       <div><label>Producto</label><input name="product_name" id="pname" list="prods" required placeholder="${names.length ? 'Elige o escribe' : 'Aún no tienes proveedores conectados'}"></div></div>
+     <div id="codeinfo"></div><datalist id="prods">${names.map(n => `<option value="${h(n)}">`).join('')}</datalist>
      <div class="row"><div><label>Cantidad</label><input name="qty" type="number" min="1" required></div><div><label>Plazo máximo (días)</label><input name="max_days" type="number" min="1" required value="5"></div></div>
      <div class="row"><div><label>Precio objetivo (€/ud)</label><input name="target_price" type="number" step="0.01" min="0" required></div><div><label>Precio máximo (€/ud)</label><input name="max_price" type="number" step="0.01" min="0" required></div></div>
      <h3>Datos de consumo <span class="muted">(solo se comparten si lo permites en tus reglas)</span></h3>
      <div class="row"><div><label>Consumo mensual</label><input name="consumption" type="number" min="0"></div><div><label>Previsión próximo mes</label><input name="forecast" type="number" min="0"></div><div><label>Tu stock actual</label><input name="buyer_stock" type="number" min="0"></div></div>
      <div class="btns"><button class="p">Lanzar negociación</button></div><div class="err" id="err"></div></form></div>
      <div class="card"><h2>Lo que ofrecen tus proveedores</h2><p class="hint">Solo ves lo que cada proveedor decide enseñar.</p>
-     ${cat.length ? `<div class="mini">${cat.map(p => `<a class="mitem" href="#escaparate/${p.seller_id}"><div class="mimg">${p.photo ? `<img src="${h(p.photo)}" alt="" loading="lazy">` : ''}</div><div style="flex:1;min-width:0"><b>${h(p.name)}</b><div class="muted">${h(p.seller)}${p.lead_days != null ? ' · ' + p.lead_days + ' d' : ''}${p.stock != null ? ' · stock ' + p.stock : ''}${p.cost != null ? ' · coste ' + eur(p.cost) : ''}</div></div><span class="price">${eur(p.list_price)}</span></a>`).join('')}</div>
+     ${cat.length ? `<div class="mini">${cat.map(p => `<a class="mitem" href="#escaparate/${p.seller_id}"><div class="mimg">${p.photo ? `<img src="${h(p.photo)}" alt="" loading="lazy">` : ''}</div><div style="flex:1;min-width:0"><b>${h(p.name)}</b><div class="muted">${p.sku ? h(p.sku) + (p.my_code ? ' = ' + h(p.my_code) + ' ✔' : '') + ' · ' : ''}${h(p.seller)}${p.lead_days != null ? ' · ' + p.lead_days + ' d' : ''}${p.stock != null ? ' · stock ' + p.stock : ''}${p.cost != null ? ' · coste ' + eur(p.cost) : ''}</div></div><span class="price">${eur(p.list_price)}</span></a>`).join('')}</div>
      <p class="hint" style="margin-top:10px">Pulsa un artículo para ver el escaparate del proveedor: fotos, vídeo, certificados y proyectos.</p>` : '<p class="muted">Cuando un proveedor te pida conexión y la autorices, verás aquí su catálogo.</p>'}</div></div>
    <div class="card"><h2>Necesidades recientes</h2>${needs.length ? `<table><tr><th>Fecha</th><th>Producto</th><th class="n">Cant.</th><th class="n">Objetivo / máx.</th><th>Estado</th></tr>${needs.map(n => `<tr><td>${fdate(n.created)}</td><td>${h(n.product_name)}</td><td class="n">${n.qty}</td><td class="n">${eur(n.target_price)} / ${eur(n.max_price)}</td><td>${pill(n.status)}</td></tr>`).join('')}</table>` : '<p class="muted">Aún no has lanzado ninguna.</p>'}</div>`;
+  const codeInfo = () => {
+    const v = $('#bcode').value.replace(/\s+/g, '').toUpperCase(), ls = mine[v];
+    $('#pname').required = !v; $('#pname').readOnly = !!ls;
+    if (ls) $('#pname').value = ls[0].buyer_desc || ls[0].product.name;
+    $('#codeinfo').innerHTML = !v ? `<p class="hint" style="margin-top:8px">Con tu código, el agente solo negocia artículos con doble código confirmado. Sin código, busca por nombre.</p>`
+      : ls ? `<div class="banner ok" style="margin-top:10px">✔ Verificado con ${ls.length} proveedor${ls.length > 1 ? 'es' : ''}: ${ls.map(l => `${h(l.seller.name)} <code class="k">${h(l.mfr_code)}</code>`).join(', ')}</div>`
+      : `<div class="banner bad" style="margin-top:10px">El código ${h(v)} no está vinculado y confirmado. <a href="#codigos">Vincúlalo aquí</a>.</div>`;
+  };
+  $('#bcode').oninput = codeInfo; codeInfo();
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const btn = e.target.querySelector('button'); btn.disabled = true;
@@ -328,8 +344,9 @@ async function viewExternos() {
      <form id="f">
      ${side === 'venta' ? `<label>Producto de tu catálogo</label><select name="product_id" required>${prods.map(p => `<option value="${p.id}" data-l="${p.list_price}" data-m="${p.min_price}">${h(p.name)} · lista ${eur(p.list_price)} · stock ${p.stock}</option>`).join('')}</select>
         ${prods.length ? '' : '<p class="err">Primero añade productos en el <a href="#catalogo">catálogo</a>.</p>'}
+        <label>Código del artículo del cliente <span class="muted">(si lo sabes; si no, se lo pediremos)</span></label><input name="buyer_code" placeholder="Opcional">
         <div class="row"><div><label>Precio de salida (€/ud)</label><input name="open_price" type="number" step="0.01" placeholder="Por defecto, el de lista"></div><div><label>Precio mínimo (€/ud)</label><input name="limit_price" type="number" step="0.01" placeholder="Por defecto, tu mínimo"></div></div>`
-      : `<label>Producto</label><input name="product_name" required><div class="row"><div><label>Unidad</label><input name="unit" value="ud"></div><div><label>Precio objetivo (€/ud)</label><input name="open_price" type="number" step="0.01" required></div><div><label>Precio máximo (€/ud)</label><input name="limit_price" type="number" step="0.01" required></div></div>`}
+      : `<label>Producto</label><input name="product_name" required><div class="row"><div><label>Tu código de artículo</label><input name="buyer_code" placeholder="Opcional"></div><div><label>Código del fabricante</label><input name="mfr_code" placeholder="Si lo sabes; si no, se lo pediremos"></div></div><div class="row"><div><label>Unidad</label><input name="unit" value="ud"></div><div><label>Precio objetivo (€/ud)</label><input name="open_price" type="number" step="0.01" required></div><div><label>Precio máximo (€/ud)</label><input name="limit_price" type="number" step="0.01" required></div></div>`}
      <div class="row"><div><label>Cantidad</label><input name="qty" type="number" min="1" required></div><div><label>Plazo de entrega (días)</label><input name="days" type="number" min="0"></div></div>
      <h3>${side === 'compra' ? 'Proveedor' : 'Cliente'}</h3>
      <div class="row"><div><label>Empresa</label><input name="cp_company"></div><div><label>Persona de contacto</label><input name="cp_name"></div></div>
@@ -361,6 +378,9 @@ async function viewExterno(id) {
      <div class="card"><h2>Enlace para ${n.side === 'compra' ? 'el proveedor' : 'el cliente'}</h2><input readonly value="${h(link)}" id="lnk"><div class="btns"><button id="cpl">Copiar enlace</button><button id="cpm">Copiar email listo para enviar</button></div>
        ${n.cp_email ? `<p class="muted">Envíalo a ${h(n.cp_email)} desde tu correo.</p>` : ''}</div>
      <div class="card"><h2>Condiciones</h2><table>
+       <tr><td>Código del fabricante</td><td class="n">${n.mfr_code ? `<code class="k">${h(n.mfr_code)}</code>` : '—'}</td></tr>
+       <tr><td>Código del cliente</td><td class="n">${n.buyer_code ? `<code class="k">${h(n.buyer_code)}</code>` : '—'}</td></tr>
+       <tr><td>Códigos confirmados por la otra parte</td><td class="n">${n.cp_code_ok ? '<span class="pill ok">✔ Sí</span>' : '<span class="pill wait">Aún no</span>'}</td></tr>
        <tr><td>Cantidad</td><td class="n">${n.qty} ${h(n.unit)}</td></tr>
        <tr><td>${n.side === 'compra' ? 'Objetivo / máximo' : 'Salida / mínimo'}</td><td class="n">${eur(n.open_price)} / ${eur(n.limit_price)}</td></tr>
        <tr><td>Última propuesta tuya</td><td class="n">${eur(n.our_offer)}</td></tr>
@@ -392,7 +412,7 @@ async function render() {
     if (parts[0] === 'producto') return await viewProducto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
     if (parts[0] === 'proyecto') return await viewProyecto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
     if (parts[0] === 'escaparate') return await viewEscaparate(+parts[1]);
-    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, catalogo: viewCatalogo, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
+    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
     await (V[r] || viewInicio)();
   } catch (e) { const m = $('#main'); if (m) m.insertAdjacentHTML('afterbegin', `<div class="banner bad">${h(e.message)}</div>`); }
 }
