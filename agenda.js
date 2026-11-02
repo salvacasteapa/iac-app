@@ -96,7 +96,9 @@ function register(app, { auth, active, bad, str, num }) {
     }
     const parent = +b.parent_id && one('SELECT id FROM agenda WHERE id=? AND company_id=?', +b.parent_id, req.company.id) ? +b.parent_id : null;
     const r = run(`INSERT INTO agenda (company_id, ${F.join(', ')}, parent_id, created) VALUES (?, ${F.map(() => '?').join(', ')}, ?, ?)`, req.company.id, ...F.map(f => v[f]), parent, now());
-    res.json({ ok: true, id: Number(r.lastInsertRowid) });
+    const cid = Number(r.lastInsertRowid), a = one('SELECT * FROM agenda WHERE id=?', cid), o = a.other_id && one('SELECT code, name, tax_id FROM companies WHERE id=?', a.other_id);
+    require('./integracion').emit(req.company.id, 'cita.creada', { id: cid, tipo: a.kind, motivo: a.motive, inicio: a.start, empresa: o ? { codigo: o.code, nombre: o.name, nif: o.tax_id } : a.contact_company || null, contacto: a.contact_name || null, notas: a.notes || null });
+    res.json({ ok: true, id: cid });
   });
   // Registrar el resultado. Devuelve el siguiente paso propuesto (o lo crea si se pide).
   app.post('/api/agenda/:id/resultado', auth, active, (req, res) => {

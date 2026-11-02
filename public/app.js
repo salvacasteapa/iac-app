@@ -81,6 +81,7 @@ async function shell(active, content) {
     ['codigos', 'Códigos de artículo', stats.codigos],
     ['conexiones', isSeller() && !isBuyer() ? 'Clientes conectados' : 'Conexiones', stats.solicitudes],
     ['politicas', 'Reglas de los agentes', 0],
+    ME.user.is_admin && ['integraciones', 'Integraciones', 0],
     ['empresa', 'Mi empresa', 0],
     ['membresia', 'Membresía', 0],
     ME.user.is_super && ['admin', 'Administración IAC', 0]
@@ -455,7 +456,7 @@ async function render() {
     if (parts[0] === 'proyecto') return await viewProyecto(parts[1] === 'nuevo' ? 'nuevo' : +parts[1]);
     if (parts[0] === 'cita') return await viewCita(parts[1] === 'nueva' ? 'nueva' : +parts[1]);
     if (parts[0] === 'escaparate') return await viewEscaparate(+parts[1]);
-    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, agenda: viewAgenda, avisos: viewAvisos, especiales: viewEspeciales, ofertas: viewOfertas, familias: viewFamilias, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
+    const V = { externos: viewExternos, inicio: viewInicio, operaciones: viewOperaciones, comprar: viewComprar, agenda: viewAgenda, avisos: viewAvisos, especiales: viewEspeciales, ofertas: viewOfertas, familias: viewFamilias, integraciones: viewIntegraciones, catalogo: viewCatalogo, codigos: viewCodigos, certificados: viewCertificados, proyectos: viewProyectos, conexiones: viewConexiones, politicas: viewPoliticas, empresa: viewEmpresa, membresia: viewMembresia, admin: viewAdmin };
     await (V[r] || viewInicio)();
   } catch (e) { const m = $('#main'); if (m) m.insertAdjacentHTML('afterbegin', `<div class="banner bad">${h(e.message)}</div>`); }
 }

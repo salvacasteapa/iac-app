@@ -304,3 +304,7 @@ table.rules td{vertical-align:middle}
 .bar .bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar .bt{background:#eef1f6;border-radius:6px;height:14px;overflow:hidden}.bar .bt i{display:block;height:100%;background:var(--brand);border-radius:6px}
 .bar .bv{text-align:right;font-variant-numeric:tabular-nums}.up{color:#15803d;font-weight:600}.down{color:#b91c1c;font-weight:600}tr.mute td{opacity:.6}
 @media(max-width:600px){.bar{grid-template-columns:1fr 110px}.bar .bt{grid-column:1/-1;grid-row:2}}
+.log{display:grid;gap:6px;font-size:13.5px;max-height:360px;overflow:auto}.log .pill{padding:1px 6px}
+.evs{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0 12px}
+table.doc td{vertical-align:top;font-size:13.5px}table.doc td:first-child{white-space:nowrap}table.doc code{font-size:12.5px;word-break:break-word}
+.res{margin-top:10px}

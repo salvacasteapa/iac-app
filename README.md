@@ -63,3 +63,12 @@ Están en `.env.example`.
 
 - **Notificaciones push (gratis):** no hay que configurar nada. Cada usuario las activa en «Avisos y seguimiento → Cómo me llegan». En iPhone, primero «Añadir a pantalla de inicio».
 - **WhatsApp (extra de pago):** añade en Render → Environment `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID` y, si cambia, `WHATSAPP_TEMPLATE` (por defecto `aviso_iac`). La plantilla debe tener 3 variables: título, detalle y enlace. Después, en «Administración IAC», activa el extra para cada empresa que lo pague; ahí ves cuántos mensajes ha enviado este mes.
+
+## Integraciones (CRM, ERP, SAP Business One)
+
+Página **Integraciones** (solo administradores):
+
+- **SAP Business One** (`sapb1.js`): se conecta al Service Layer (`https://servidor:50000/b1s/v1`). Trae grupos de artículos como familias, artículos de venta con precio de la lista elegida, stock, unidad y EAN; enlaza clientes y proveedores por NIF (o a mano por CardCode) y trae su grupo. Cada pedido cerrado se crea en SAP como `Orders` (ventas) o `PurchaseOrders` (compras, con el código de artículo del cliente). Sincroniza cada 60 min o a mano. La contraseña se guarda cifrada con `SECRET_KEY` (o `DATA_DIR/secret.key`).
+- **API**: claves `iac_…` en la cabecera `Authorization: Bearer`. Funcionan en todas las rutas `/api`. Rutas para sincronizar: `POST /api/v1/articulos/lote`, `POST /api/v1/clientes/lote`, `GET /api/v1/pedidos`, `GET /api/v1/clientes`.
+- **Webhooks** firmados (`X-IAC-Signature: t=…,v1=HMAC-SHA256(t.cuerpo)`): pedido.cerrado / pendiente / perdido, oferta.enviada / recibida, cita.creada, aviso.creado, conexion.solicitada, articulos.sincronizados.
+- **Excel**: importar artículos y grupos de clientes en CSV (`;` y coma decimal), exportar catálogo y pedidos.

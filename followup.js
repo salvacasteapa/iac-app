@@ -76,12 +76,14 @@ function alert({ cid, otherId, otherName, dealId, extId, outcome, total, product
     kind === 'nada' ? null : kind, days, owner, JSON.stringify([...rec]), rec.size ? 'nuevo' : 'registrado', now());
   const id = Number(r.lastInsertRowid);
   if (rec.size) setImmediate(() => require('./notify').dispatch(id).catch(e => console.error('aviso', id, e.message)));
+  require('./integracion').emit(cid, 'aviso.creado', { id, nivel: level, resultado: outcome, titulo: title, resumen: summary || null, pedido: dealId || null, accion_sugerida: kind === 'nada' ? null : kind });
   return id;
 }
 
 const eur = n => Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
 /** Aviso a partir de una operación entre agentes, para el lado vendedor. */
 function dealAlert(d, outcome, why) {
+  require('./integracion').dealEvent(d.id);
   const buyer = one('SELECT name FROM companies WHERE id=?', d.buyer_id), p = d.product_id && one('SELECT name FROM products WHERE id=?', d.product_id);
   const total = d.total ?? (d.qty && d.price ? d.qty * d.price : null);
   const what = `${d.qty ? d.qty + ' ud de ' : ''}${p?.name || 'artículo'}`;

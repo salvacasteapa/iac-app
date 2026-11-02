@@ -93,6 +93,9 @@ function register(app, { auth, active, bad, str, num, sellerOnly, admin }) {
       run('INSERT INTO offer_recipients (offer_id, buyer_id, auth_id) VALUES (?,?,?)', oid, c.id, aid);
     }
     res.json({ ok: true, id: oid, sent: clients.length });
+    const I = require('./integracion'), od = { id: oid, titulo: title, sobre: target, familia: category, articulo: p ? { codigo: p.erp_code || p.sku, nombre: p.name } : null, condiciones: condText({ price_mode, price, discount_pct, lead_days, min_qty, valid_to }), precio: price, descuento: discount_pct, valida_hasta: valid_to };
+    I.emit(cid, 'oferta.enviada', { ...od, clientes: clients.map(c => ({ id: c.id, nombre: c.name })) });
+    for (const c of clients) I.emit(c.id, 'oferta.recibida', { ...od, proveedor: { id: cid, nombre: req.company.name } });
     // Aviso al móvil de los usuarios del cliente que lo tengan activado
     if (notify?.sendPush) for (const c of clients) for (const u of all('SELECT id FROM users WHERE company_id=?', c.id))
       notify.sendPush(u.id, { title: `Oferta de ${req.company.name}`, body: `${title}: ${condText({ price_mode, price, discount_pct, lead_days, min_qty, valid_to })}`, url: '/app#ofertas', tag: 'oferta-' + oid }).catch(() => {});

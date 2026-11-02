@@ -109,6 +109,12 @@ function startSession(res, req, userId) {
   res.setHeader('Set-Cookie', `iac_s=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}${req.secure ? '; Secure' : ''}`);
 }
 function auth(req, res, next) {
+  // Otros sistemas (ERP, CRM, Zapier…) entran con una clave de API de la empresa
+  if (req.headers.authorization) {
+    const k = require('./integracion').apiAuth(req);
+    if (!k) return bad(res, 'Clave de API no válida', 401);
+    req.user = k.user; req.company = k.company; req.apiKey = k.key; return next();
+  }
   const t = cookies(req).iac_s;
   const s = t && one('SELECT * FROM sessions WHERE token=? AND expires>?', t, now());
   if (!s) return bad(res, 'Sesión caducada', 401);
@@ -294,6 +300,7 @@ app.post('/api/connections', auth, active, (req, res) => {
   const by = asBuyer ? 'comprador' : 'vendedor';
   if (ex) run('UPDATE connections SET status=?, message=?, requested_by=?, created=? WHERE id=?', 'pendiente', str(req.body?.message, 600), by, now(), ex.id);
   else run('INSERT INTO connections (seller_id, buyer_id, status, message, requested_by, created) VALUES (?,?,?,?,?,?)', sid, bid, 'pendiente', str(req.body?.message, 600), by, now());
+  require('./integracion').emit(other.id, 'conexion.solicitada', { de: { codigo: me.code, nombre: me.name, nif: me.tax_id }, como: asBuyer ? 'cliente' : 'proveedor', mensaje: str(req.body?.message, 600) });
   res.json({ ok: true });
 });
 app.post('/api/connections/:id/status', auth, active, (req, res) => {
@@ -584,6 +591,8 @@ require('./notify').register(app, { auth, bad, num, str });
 followup.register(app, { auth, active, bad, str, num, admin });
 specials.register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./agenda').register(app, { auth, active, bad, str, num });
+require('./integracion').register(app, { auth, active, bad, str, admin, sellerOnly });
+require('./sapb1').register(app, { auth, active, bad, str, num, admin });
 require('./familias').register(app, { auth, active, bad, str, sellerOnly, admin });
 require('./ofertas').register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
