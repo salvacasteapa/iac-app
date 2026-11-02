@@ -48,7 +48,7 @@ async function viewCatalogo() {
 async function viewProducto(id) {
   await shell('catalogo', '<div id="c"></div>');
   const isNew = id === 'nuevo';
-  const [p, certs] = await Promise.all([isNew ? Promise.resolve({ unit: 'ud', lead_days: 3, photos: [], video: null, cert_ids: [] }) : api('/products/' + id), api('/certificates')]);
+  const [p, certs, fams] = await Promise.all([isNew ? Promise.resolve({ unit: 'ud', lead_days: 3, photos: [], video: null, cert_ids: [] }) : api('/products/' + id), api('/certificates'), api('/familias?lista=1')]);
   const st = { photos: p.photos.map(x => x.id), purls: Object.fromEntries(p.photos.map(x => [x.id, x.url])), video: p.video?.id || null, vurl: p.video?.url || null };
   const draw = () => {
     $('#photos').innerHTML = Array.from({ length: MAX_PHOTOS }, (_, i) => {
@@ -83,7 +83,8 @@ async function viewProducto(id) {
       <label>Nombre</label><input name="name" value="${h(p.name)}" required>
       <div class="row"><div><label>Código del fabricante *</label><input name="sku" value="${h(p.sku)}" required placeholder="Ej.: TOR-M8-A2" style="font-family:ui-monospace,monospace;font-weight:600"></div><div><label>EAN / código de barras</label><input name="ean" value="${h(p.ean)}" inputmode="numeric" placeholder="Opcional"></div></div>
       <p class="hint" style="margin:6px 0 0">El código del fabricante identifica el artículo aunque cambies el nombre o la descripción. Tus clientes lo vinculan con su propio código en «Códigos de artículo».</p>
-      <label>Familia</label><input name="category" value="${h(p.category)}" list="cats" placeholder="Ej.: Tornillería">
+      <label>Familia</label><select name="family_id" id="fam"><option value="">Sin familia</option>${fams.map(f => `<option value="${f.id}" ${p.family_id === f.id ? 'selected' : ''}>${h(f.name)}${f.code ? ' · ' + h(f.code) : ''}</option>`).join('')}<option value="nueva">+ Nueva familia…</option></select>
+      <p class="hint" style="margin:6px 0 0">Las familias se gestionan en <a href="#familias">Familias</a>, con sus estadísticas de venta.</p>
       <label>Descripción</label><textarea name="description" rows="5" placeholder="Medidas, materiales, usos, ventajas…">${h(p.description)}</textarea>
       <h3>Precios y stock</h3>
       <div class="row"><div><label>Precio de lista (€)</label><input name="list_price" type="number" step="0.01" value="${p.list_price ?? ''}" required></div><div><label>Precio mínimo (€)</label><input name="min_price" type="number" step="0.01" value="${p.min_price ?? ''}" required></div><div><label>Coste (€)</label><input name="cost" type="number" step="0.01" value="${p.cost ?? ''}"></div></div>
@@ -91,6 +92,13 @@ async function viewProducto(id) {
       <div class="btns"><button class="p">Guardar artículo</button>${isNew ? '' : '<button type="button" class="danger" id="del">Quitar del catálogo</button>'}<span class="muted" id="up"></span></div><div class="err" id="err"></div></div></div>
    </div></form>`;
   draw();
+  const fam = $('#fam'); let famPrev = fam.value;
+  fam.onchange = async () => {
+    if (fam.value !== 'nueva') { famPrev = fam.value; return; }
+    const name = (prompt('Nombre de la nueva familia') || '').trim(); if (!name) { fam.value = famPrev; return; }
+    try { const r = await api('/familias', { body: { name } }); const o = new Option(r.name, r.id); fam.add(o, fam.options[fam.options.length - 1]); fam.value = famPrev = String(r.id); toast('Familia creada'); }
+    catch (e) { toast(e.message); fam.value = famPrev; }
+  };
   $('#f').onsubmit = async e => {
     e.preventDefault(); const fd = new FormData(e.target);
     const body = Object.fromEntries([...fd].filter(([k]) => k !== 'cert')); body.certs = fd.getAll('cert').map(Number); body.photos = st.photos; body.video = st.video;

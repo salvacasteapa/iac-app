@@ -300,3 +300,7 @@ table.rules td{vertical-align:middle}
 .offer .obody{display:flex;gap:14px;align-items:flex-start}.offer .obody img{width:84px;height:84px;object-fit:cover;border-radius:12px;flex:none}
 .offer h2{margin:0 0 4px}.offer .oc{font-size:28px;font-weight:800;color:var(--brand);line-height:1.2;margin:2px 0 4px}.offer .oc small{font-size:14px;font-weight:500;color:#5d6676}
 @media(max-width:520px){.offers{grid-template-columns:1fr}}
+.bars{display:grid;gap:8px}.bar{display:grid;grid-template-columns:160px 1fr 150px;gap:10px;align-items:center;font-size:14px}
+.bar .bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar .bt{background:#eef1f6;border-radius:6px;height:14px;overflow:hidden}.bar .bt i{display:block;height:100%;background:var(--brand);border-radius:6px}
+.bar .bv{text-align:right;font-variant-numeric:tabular-nums}.up{color:#15803d;font-weight:600}.down{color:#b91c1c;font-weight:600}tr.mute td{opacity:.6}
+@media(max-width:600px){.bar{grid-template-columns:1fr 110px}.bar .bt{grid-column:1/-1;grid-row:2}}

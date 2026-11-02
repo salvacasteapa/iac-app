@@ -584,6 +584,7 @@ require('./notify').register(app, { auth, bad, num, str });
 followup.register(app, { auth, active, bad, str, num, admin });
 specials.register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./agenda').register(app, { auth, active, bad, str, num });
+require('./familias').register(app, { auth, active, bad, str, sellerOnly, admin });
 require('./ofertas').register(app, { auth, active, bad, str, num, sellerOnly, admin });
 require('./showcase').register(app, { auth, active, bad, str, num, sellerOnly, publicCompany, isActive });
 
